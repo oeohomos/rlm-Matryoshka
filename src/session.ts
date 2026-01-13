@@ -6,17 +6,21 @@
  */
 
 import { createSandbox, Sandbox, SandboxOptions } from "./sandbox.js";
-
-interface LLMQueryOptions {
-  format?: "json" | "text";
-}
-
-type LLMQueryFn = (prompt: string, options?: LLMQueryOptions) => Promise<string>;
+import type { LLMQueryFn } from "./llm/types.js";
+import { createHash } from "node:crypto";
 
 interface Session {
   sandbox: Sandbox;
   filePath: string;
+  contentHash: string;
   createdAt: Date;
+}
+
+/**
+ * Create a hash of content for change detection
+ */
+function hashContent(content: string): string {
+  return createHash("md5").update(content).digest("hex");
 }
 
 /**
@@ -78,19 +82,28 @@ export function createSessionManager(): SessionManager {
       llmFn: LLMQueryFn,
       options?: SandboxOptions
     ): Promise<Sandbox> {
+      const newHash = hashContent(content);
+
       // Check for existing session
       const existing = sessions.get(filePath);
       if (existing) {
-        return existing.sandbox;
+        // If content changed, dispose old sandbox and create new one
+        if (existing.contentHash !== newHash) {
+          existing.sandbox.dispose();
+          sessions.delete(filePath);
+        } else {
+          return existing.sandbox;
+        }
       }
 
       // Create new sandbox
       const sandbox = await createSandbox(content, llmFn, options);
 
-      // Store session
+      // Store session with content hash
       sessions.set(filePath, {
         sandbox,
         filePath,
+        contentHash: newHash,
         createdAt: new Date(),
       });
 

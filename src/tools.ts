@@ -353,10 +353,14 @@ export function validateRegistry(registry: ToolRegistry): {
 } {
   const requiredTools = [
     "llm_query",
+    "batch_llm_query",
     "text_stats",
     "fuzzy_search",
     "context.slice",
     "context.match",
+    "grep",
+    "count_tokens",
+    "locate_line",
   ];
 
   const missing = requiredTools.filter(

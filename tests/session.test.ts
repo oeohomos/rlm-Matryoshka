@@ -56,6 +56,32 @@ describe("SessionManager (Persistent Sandbox)", () => {
       expect(result.result).toEqual(["first query"]);
     });
 
+    it("should recreate sandbox when content changes", async () => {
+      const sandbox1 = await sessionManager.getOrCreate(
+        "/path/to/doc.txt",
+        "Original content",
+        mockLLM
+      );
+
+      // Push something to memory
+      await sandbox1.execute('memory.push("from original")');
+
+      // Get again with CHANGED content
+      const sandbox2 = await sessionManager.getOrCreate(
+        "/path/to/doc.txt",
+        "Updated content - different!", // Content changed
+        mockLLM
+      );
+
+      // Should be a NEW sandbox with empty memory (old one disposed)
+      const result = await sandbox2.execute("memory");
+      expect(result.result).toEqual([]);
+
+      // Verify the new sandbox has the updated content
+      const contextResult = await sandbox2.execute("context");
+      expect(contextResult.result).toBe("Updated content - different!");
+    });
+
     it("should create different sandboxes for different paths", async () => {
       const sandbox1 = await sessionManager.getOrCreate(
         "/path/to/doc1.txt",

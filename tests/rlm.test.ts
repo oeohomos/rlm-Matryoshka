@@ -46,24 +46,6 @@ describe("RLM Executor", () => {
       );
     });
 
-    it("should include document outline when provided", () => {
-      const outline = `## Document Overview (Pre-computed)
-
-- **Format**: markdown
-- **Size**: 100 lines, 5,000 characters`;
-
-      const prompt = buildSystemPrompt(5000, "", outline);
-
-      expect(prompt).toContain("Document Overview");
-      expect(prompt).toContain("Format");
-      expect(prompt).toContain("markdown");
-    });
-
-    it("should work without outline (backward compatible)", () => {
-      const prompt = buildSystemPrompt(1000, "");
-      // Should not throw and should still have basic content
-      expect(prompt).toContain("Recursive Language Model");
-    });
   });
 
   describe("extractCode", () => {

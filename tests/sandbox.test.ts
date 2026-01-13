@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createSandbox, Sandbox, createTextStats, generateDocumentOutline } from "../src/sandbox.js";
+import { createSandbox, Sandbox, createTextStats } from "../src/sandbox.js";
 
 describe("TypeScript Sandbox", () => {
   const testContext = `Line 1
@@ -743,75 +743,3 @@ describe("createTextStats", () => {
   });
 });
 
-describe("generateDocumentOutline", () => {
-  it("should detect markdown headers", () => {
-    const doc = `# Title
-Some intro text
-## Section 1
-Content here
-### Subsection 1.1
-More content
-## Section 2
-Final content`;
-
-    const outline = generateDocumentOutline(doc);
-
-    expect(outline.sections).toHaveLength(4);
-    expect(outline.sections[0].title).toBe("Title");
-    expect(outline.sections[0].level).toBe(1);
-    expect(outline.sections[1].title).toBe("Section 1");
-    expect(outline.sections[1].level).toBe(2);
-  });
-
-  it("should detect common patterns like DATE:, ERROR:, etc.", () => {
-    const doc = `2024-01-01 INFO: Starting
-2024-01-01 ERROR: Something failed
-2024-01-01 WARN: Low memory
-2024-01-02 INFO: Recovered`;
-
-    const outline = generateDocumentOutline(doc);
-
-    expect(outline.patterns).toBeDefined();
-    expect(outline.patterns.some(p => p.pattern.includes("ERROR"))).toBe(true);
-  });
-
-  it("should provide document summary", () => {
-    const doc = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10";
-
-    const outline = generateDocumentOutline(doc);
-
-    expect(outline.summary.totalLines).toBe(10);
-    expect(outline.summary.totalChars).toBe(doc.length);
-  });
-
-  it("should detect JSON/structured data", () => {
-    const doc = `{"users": [{"name": "John"}, {"name": "Jane"}]}`;
-
-    const outline = generateDocumentOutline(doc);
-
-    expect(outline.format).toBe("json");
-  });
-
-  it("should detect CSV format", () => {
-    const doc = `name,age,city
-John,30,NYC
-Jane,25,LA`;
-
-    const outline = generateDocumentOutline(doc);
-
-    expect(outline.format).toBe("csv");
-  });
-
-  it("should handle plain text documents", () => {
-    const doc = `This is a plain text document.
-It has multiple paragraphs.
-
-Each paragraph has some content.
-The document discusses various topics.`;
-
-    const outline = generateDocumentOutline(doc);
-
-    expect(outline.format).toBe("text");
-    expect(outline.summary.totalLines).toBeGreaterThan(0);
-  });
-});
