@@ -138,9 +138,11 @@ export function extractFinalAnswer(
       if (parsed.summary) return parsed.summary;
       if (parsed.response) return parsed.response;
       if (parsed.answer) return parsed.answer;
-      // Check for any field that looks like a final value
-      const valueFields = ['total', 'result', 'value', 'total_sales', 'count', 'sum', 'answer'];
-      const foundValue = valueFields.find(f => parsed[f] !== undefined);
+      // Check for any field that looks like a final value (case-insensitive)
+      const valueFields = ['total', 'result', 'value', 'totalsales', 'total_sales', 'count', 'sum', 'answer', 'totals'];
+      const keys = Object.keys(parsed);
+      const foundKey = keys.find(k => valueFields.includes(k.toLowerCase().replace(/_/g, '')));
+      const foundValue = foundKey;
 
       if (foundValue !== undefined) {
         const value = parsed[foundValue];
@@ -208,6 +210,8 @@ export async function runRLM(
   // Track repeated "done" patterns to detect stuck model
   let doneCount = 0;
   let lastMeaningfulOutput = "";
+  // Track consecutive no-code responses to detect stuck model
+  let noCodeCount = 0;
 
   try {
     for (let turn = 1; turn <= maxTurns; turn++) {
@@ -242,6 +246,7 @@ export async function runRLM(
         }
 
         codeExecuted = true;
+        noCodeCount = 0; // Reset no-code counter on successful code extraction
         log(`[Turn ${turn}] Executing code:`);
         log("```javascript");
         log(code);
@@ -344,6 +349,13 @@ export async function runRLM(
         log(`[Turn ${turn}] No code block found in response`);
         log(`[Turn ${turn}] Raw response (first 500 chars):`);
         log(response.slice(0, 500));
+
+        noCodeCount++;
+        // If model is stuck (3+ consecutive no-code responses) and we have meaningful output, return it
+        if (noCodeCount >= 3 && lastMeaningfulOutput) {
+          log(`[Turn ${turn}] Model stuck (${noCodeCount} consecutive no-code responses). Returning last meaningful output.`);
+          return lastMeaningfulOutput;
+        }
 
         // Check for final answer in responses without code
         const finalAnswer = extractFinalAnswer(response);

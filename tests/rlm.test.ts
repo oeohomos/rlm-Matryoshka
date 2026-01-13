@@ -134,6 +134,30 @@ describe("RLM Executor", () => {
       const answer = extractFinalAnswer(response);
       expect(answer).toBe("The answer");
     });
+
+    it("should extract answer from JSON with totalSales (camelCase)", () => {
+      const response = '```json\n{\n  "totalSales": "$13,000.00"\n}\n```';
+      const answer = extractFinalAnswer(response);
+      expect(answer).not.toBeNull();
+      const parsed = JSON.parse(answer as string);
+      expect(parsed.totalSales).toBe("$13,000.00");
+    });
+
+    it("should extract answer from JSON with total_sales (snake_case)", () => {
+      const response = '```json\n{\n  "total_sales": 13000\n}\n```';
+      const answer = extractFinalAnswer(response);
+      expect(answer).not.toBeNull();
+      const parsed = JSON.parse(answer as string);
+      expect(parsed.total_sales).toBe(13000);
+    });
+
+    it("should extract answer from JSON with result field", () => {
+      const response = '```json\n{\n  "result": "Found 5 items"\n}\n```';
+      const answer = extractFinalAnswer(response);
+      expect(answer).not.toBeNull();
+      const parsed = JSON.parse(answer as string);
+      expect(parsed.result).toBe("Found 5 items");
+    });
   });
 
   describe("runRLM", () => {
