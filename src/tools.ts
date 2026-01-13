@@ -104,13 +104,13 @@ export function createToolRegistry(): ToolRegistry {
       {
         name: "fuzzy_search",
         description:
-          "Find approximate keyword matches using fuzzy string matching. Returns matching lines with line numbers and match scores (lower score = better match).",
+          "Find approximate keyword matches using fuzzy string matching. Returns matching lines with line numbers and match scores (lower score = better match). NOTE: Takes a single search term, NOT regex. For regex patterns use grep() instead.",
         parameters: {
           type: "object",
           properties: {
             query: {
               type: "string",
-              description: "Search term (supports approximate/fuzzy matching)",
+              description: "Single search term (NOT regex - use grep for patterns). Example: 'total' not 'total|sum'",
             },
             limit: {
               type: "number",
@@ -188,16 +188,16 @@ export function createToolRegistry(): ToolRegistry {
             flags: {
               type: "string",
               description:
-                'Regex flags (g and m are included by default for global multiline search)',
+                'Regex flags (g, m, i are included by default for global multiline case-insensitive search)',
               optional: true,
             },
           },
           required: ["pattern"],
         },
         returns: {
-          type: "Array<{ match: string; lineNum: number; index: number; groups: string[] }>",
+          type: "Array<{ match: string; line: string; lineNum: number; index: number; groups: string[] }>",
           description:
-            "Matches with line numbers (1-based), character index, and capture groups",
+            "Matches with full line content, line numbers (1-based), character index, and capture groups",
         },
       },
       {

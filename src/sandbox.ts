@@ -5,6 +5,49 @@ import { FUZZY_SEARCH_IMPL } from "./fuzzy-search.js";
  * Wrap code to capture the last expression as __result__
  * This handles the common case of code that ends with an expression
  */
+/**
+ * Extract top-level variable declarations for context-level persistence
+ * Returns: { declarations: string[], mainCode: string }
+ *
+ * This enables REPL-like state persistence between turns by running
+ * declarations at context scope (not inside IIFE)
+ */
+function extractDeclarations(code: string): { declarations: string[], mainCode: string } {
+  const lines = code.split('\n');
+  const declarations: string[] = [];
+  const mainLines: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    const indent = line.length - trimmed.length;
+
+    // Only extract top-level declarations (minimal indent)
+    if (indent <= 2 && (trimmed.startsWith('const ') || trimmed.startsWith('let ') || trimmed.startsWith('var '))) {
+      // Extract variable name(s) and convert to var declaration
+      // Handle: const x = ..., let {a, b} = ..., const [x, y] = ...
+      const match = trimmed.match(/^(?:const|let|var)\s+(\w+|\{[^}]+\}|\[[^\]]+\])/);
+      if (match) {
+        const varName = match[1];
+        if (varName.startsWith('{') || varName.startsWith('[')) {
+          // Destructuring - keep the full declaration but convert to var
+          declarations.push(line.replace(/^(\s*)(?:const|let)/, '$1var'));
+        } else {
+          // Simple variable - declare at context level
+          declarations.push(`var ${varName};`);
+          // Keep the assignment in main code but as assignment not declaration
+          mainLines.push(line.replace(/^(\s*)(?:const|let|var)\s+/, '$1'));
+        }
+      } else {
+        mainLines.push(line);
+      }
+    } else {
+      mainLines.push(line);
+    }
+  }
+
+  return { declarations, mainCode: mainLines.join('\n') };
+}
+
 function wrapCodeForReturn(code: string): string {
   const trimmed = code.trim();
 
@@ -234,14 +277,15 @@ export async function createSandbox(
     /**
      * grep - Fast regex search returning matches with line numbers
      * @param {string} pattern - Regex pattern to match
-     * @param {string} [flags='gm'] - Regex flags (g and m are included by default)
-     * @returns {Array<{match: string, lineNum: number, index: number, groups: string[]}>}
+     * @param {string} [flags='gmi'] - Regex flags (g, m, i are included by default for case-insensitive search)
+     * @returns {Array<{match: string, line: string, lineNum: number, index: number, groups: string[]}>}
      */
     function grep(pattern, flags) {
-      // Default to global + multiline for line-based searching
+      // Default to global + multiline + case-insensitive for line-based searching
       let f = flags || '';
       if (!f.includes('g')) f += 'g';
       if (!f.includes('m')) f += 'm';
+      if (!f.includes('i')) f += 'i';  // Case-insensitive by default
       const regex = new RegExp(pattern, f);
       const results = [];
       let match;
@@ -251,8 +295,12 @@ export async function createSandbox(
         const beforeMatch = context.slice(0, match.index);
         const lineNum = (beforeMatch.match(/\\n/g) || []).length + 1;
 
+        // Get the full line content
+        const line = __linesArray[lineNum - 1] || '';
+
         results.push({
           match: match[0],
+          line: line,  // Full line content for context
           lineNum: lineNum,
           index: match.index,
           groups: match.slice(1) // Capture groups
@@ -368,12 +416,20 @@ export async function createSandbox(
       };
 
       try {
-        // Parse the code to extract the last expression for return value
-        // Wrap code in async IIFE that returns the last expression
+        // Extract declarations to run at context level for REPL-like persistence
+        const { declarations, mainCode } = extractDeclarations(code);
+
+        // Run declarations at context level first (persists across turns)
+        if (declarations.length > 0) {
+          const declScript = new vm.Script(declarations.join('\n'));
+          declScript.runInContext(vmContext);
+        }
+
+        // Then run main code in async IIFE for proper async handling
         const wrappedCode = `
           (async () => {
-            let __result__;
-            ${wrapCodeForReturn(code)}
+            var __result__;
+            ${wrapCodeForReturn(mainCode)}
             return __result__;
           })()
         `;

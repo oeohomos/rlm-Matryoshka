@@ -43,7 +43,7 @@ Copy `config.example.json` to `config.json` and configure your LLM provider:
   "providers": {
     "ollama": {
       "baseUrl": "http://localhost:11434",
-      "model": "qwen3-coder:30b",
+      "model": "qwen2.5-coder:7b",
       "options": { "temperature": 0.2, "num_ctx": 8192 }
     },
     "deepseek": {
@@ -121,7 +121,7 @@ import { createLLMClient } from "matryoshka-rlm";
 
 const llmClient = createLLMClient("ollama", {
   baseUrl: "http://localhost:11434",
-  model: "qwen3-coder:30b",
+  model: "qwen2.5-coder:7b",
   options: { temperature: 0.2 }
 });
 
@@ -131,6 +131,8 @@ const result = await runRLM("What are the main themes?", "./book.txt", {
   turnTimeoutMs: 30000,
 });
 ```
+
+> **Note**: The current Ollama implementation is tuned for `qwen2.5-coder:7b`. Other models may require prompt adjustments—see [Model-Specific Tuning](#model-specific-tuning) in Troubleshooting.
 
 ## Architecture
 
@@ -239,6 +241,39 @@ The LLM has access to these tools when exploring documents:
 1. The system auto-fixes common issues (missing semicolons, TypeScript syntax)
 2. If errors persist, try a different model - some are better at generating valid code
 3. Use `--verbose` to see what code the model is generating
+
+### Model-Specific Tuning
+
+**Symptom**: A model that works with one provider doesn't work well with another, or a different model size behaves differently.
+
+**Cause**: Different LLMs have varying instruction-following capabilities, code generation quality, and prompting preferences. The RLM system prompt and feedback messages are tuned for specific model behaviors.
+
+**Why This Happens**:
+
+- **Instruction following**: Smaller models (7B) may ignore complex instructions or take shortcuts (e.g., answering without exploring)
+- **Code generation**: Some models prefer TypeScript syntax, others generate Python by mistake
+- **Termination patterns**: Models differ in how they signal completion—some use `<<<FINAL>>>` correctly, others put it inside code blocks
+- **Error recovery**: When code fails, some models self-correct while others repeat the same mistake
+
+**Current Tuning**:
+
+The Ollama provider is currently tuned for `qwen2.5-coder:7b` with these accommodations:
+- Case-insensitive `grep()` to handle varying capitalization
+- Detection of `<<<FINAL>>>` markers inside code blocks
+- Variable persistence between turns (REPL-like state)
+- Rejection of answers after code errors (forces retry)
+- Fallback to console output when memory is empty
+
+**Adapting for Other Models**:
+
+If using a different model, you may need to adjust `src/rlm.ts`:
+
+1. **System prompt** (`buildSystemPrompt`): Modify examples and instructions to match model's style
+2. **Final answer detection** (`extractFinalAnswer`): Add patterns the model uses to signal completion
+3. **Feedback messages**: Adjust error messages and hints to guide the specific model
+4. **Code extraction** (`extractCode`): Some models use different code block markers
+
+Larger models (30B+) typically need fewer accommodations as they follow instructions more reliably.
 
 ## Development
 

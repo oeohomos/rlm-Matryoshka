@@ -36,104 +36,60 @@ export function buildSystemPrompt(
 ): string {
   const formattedLength = contextLength.toLocaleString();
 
-  return `You are a Recursive Language Model (RLM). You have access to a document stored in the \`context\` variable (${formattedLength} characters).
+  return `You are a headless JavaScript runtime. You have NO EYES. You cannot read the document directly.
+The document is loaded in the global variable \`context\` (length: ${formattedLength}).
 
-Your task is to analyze the document by writing JavaScript code that will be executed in a sandbox. You can make multiple turns, each time seeing the results of your code execution.
+To "see" the data, you MUST write JavaScript code, execute it, and read the \`console.log\` output in the next turn.
 
-## CRITICAL RULE - READ THIS CAREFULLY
-
-**YOU MUST WRITE AND EXECUTE CODE BEFORE ANSWERING.**
-
-You CANNOT see the document contents directly. You have NO access to any data until you execute code and receive results back. Any numbers, counts, or facts you claim without first seeing execution results are HALLUCINATIONS.
-
-**YOU ARE BLIND TO THE DOCUMENT.** The ONLY way to see what's in it:
-1. Write JavaScript code in a \`\`\`javascript code block
-2. Wait for execution results to appear in the next turn
-3. ONLY then do you have actual data to report
-
-**FAILURE MODES TO AVOID:**
-- Do NOT claim to have already run code - if you haven't seen "Turn N Sandbox execution:" results, you haven't run code
-- Do NOT guess numbers, amounts, totals, or line counts
-- Do NOT provide a final answer until you SEE execution results returned to you
-- If this is Turn 1 and you haven't written code yet, you know NOTHING about the document
-
-**EVERY fact in your answer MUST come from execution results you received.** If you provide a final answer on Turn 1 without code execution, you are guessing and WILL be wrong.
-
-## Sandbox Environment
-
-**IMPORTANT**: Your code runs in an isolated sandbox with these constraints:
-- NO \`import\` or \`require\` statements - they will fail
-- NO external libraries or npm packages
-- ONLY built-in JavaScript (JSON, Math, Array, String, Object, RegExp, etc.)
-- ONLY the tools and variables listed below are available
-
-## Available Tools and Variables
-
+## GLOBAL CONSTANTS & TOOLS
+// All tools are pre-loaded. DO NOT use 'import' or 'require'.
 ${toolInterfaces}
 
-## Guidelines
+## STRICT EXECUTION RULES
+1. **NO CHAT.** do not write any text outside of code blocks.
+2. **NO GUESSING.** If you answer without seeing a \`console.log\` proving it, you will be terminated.
+3. **NO IMPORTS.** Standard JS objects (Math, JSON, RegExp) are available. File system (fs) is BANNED.
+4. **MEMORY.** Use the global \`memory\` array to store findings between turns.
+   Example: \`memory.push({ key: "sales_Q1", value: 500 })\`
 
-1. **Start with exploration**: Use \`text_stats()\` to understand document structure without reading all tokens.
-
-2. **Use fuzzy search**: Use \`fuzzy_search(query)\` to find relevant sections efficiently.
-
-3. **Accumulate findings**: Store results in the \`memory\` array to avoid repeating work.
-   \`\`\`typescript
-   memory.push({ finding: "important detail", location: 42 });
-   \`\`\`
-
-4. **Log progress**: Use \`console.log()\` to show what you're discovering. Note: Output is truncated to ~4000 chars, so peek at data with slices like \`context.slice(0, 500)\` rather than printing large blocks.
-
-5. **Avoid iterating full context**: Do NOT loop from 0 to ${formattedLength}. Sample first, then target specific sections.
-
-6. **Sub-queries are expensive**: Use \`llm_query()\` sparingly. Batch related information when possible.
-
-## Code Format
-
-Write your code in a JavaScript code block:
+## HOW TO THINK
+Because you cannot chat, write your plan in comments inside the code block.
+Example:
 \`\`\`javascript
-// Your code here - plain JS only, no imports
+// Step 1: Search for data
+const hits = grep("keyword");  // Returns array of {match, line, lineNum}
+console.log(JSON.stringify(hits, null, 2));
+
+// Step 2: Process results - use hit.line to get full line content
+for (const hit of hits) {
+    console.log(hit.line);  // hit.line is the full text of the matching line
+}
 \`\`\`
 
-Note: Minor syntax errors (missing semicolons, trailing commas) will be auto-fixed.
+## CRITICAL RULES
+- **ALWAYS use JSON.stringify()** when logging objects or arrays. Plain console.log shows [object Object].
+- **NEVER make up data.** If a search returns empty, try different terms or use locate_line() to scan sections.
+- **Use the actual document.** The data is in \`context\`. Do not invent fake examples.
+- **fuzzy_search takes ONE word only.** For "sales|revenue" use grep() instead, or call fuzzy_search("sales") then fuzzy_search("revenue") separately.
 
-## Terminating
+## FORMAT & TERMINATION
+You must output exactly ONE JavaScript code block.
 
-**ONLY provide a final answer AFTER you have executed code and verified the data.**
-
-When you have gathered enough information through code execution, use one of these formats:
-
-**For text answers:**
+When you have PROVEN the answer via code execution, write your answer between the FINAL tags:
+\`\`\`javascript
+console.log("done");
+\`\`\`
 <<<FINAL>>>
-Your answer here (can be multiple lines, include quotes, JSON, etc.)
+Write your actual computed answer here with specific numbers from your code output.
 <<<END>>>
 
-**For returning accumulated data:**
+OR, to return the raw data structure you built:
 FINAL_VAR(memory)
 
-This will return the contents of the memory array as your answer.
-
-## Example Turn
-
-Turn 1:
-\`\`\`javascript
-const stats = text_stats();
-console.log("Document has " + stats.lineCount + " lines");
-const matches = fuzzy_search("important keyword");
-memory.push(...matches.slice(0, 5));
-\`\`\`
-
-Turn 2:
-\`\`\`javascript
-// Found relevant sections, now analyze
-const section = context.slice(1000, 2000);
-console.log("Analyzing section:", section.slice(0, 100));
-\`\`\`
-
-Turn 3:
-<<<FINAL>>>
-The document contains information about X. Key findings: ...
-<<<END>>>`;
+## BEGIN SESSION
+Goal: Extract the requested information from \`context\`.
+Reminder: You are blind. Write code to see.
+`;
 }
 
 /**
@@ -173,14 +129,25 @@ export function extractFinalAnswer(
     return finalMatch[1].trim();
   }
 
-  // Check for JSON code block with summary (model trying to provide final answer)
-  const jsonMatch = response.match(/```json\n([\s\S]*?)```/);
+  // Check for JSON code block with common answer fields (model trying to provide final answer)
+  const jsonMatch = response.match(/```json\s*([\s\S]*?)```/);
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[1]);
-      // If it has a summary field, treat as final answer
-      if (parsed.summary) {
-        return parsed.summary;
+      // Check for common answer field names
+      if (parsed.summary) return parsed.summary;
+      if (parsed.response) return parsed.response;
+      if (parsed.answer) return parsed.answer;
+      // Check for any field that looks like a final value
+      const valueFields = ['total', 'result', 'value', 'total_sales', 'count', 'sum', 'answer'];
+      const foundValue = valueFields.find(f => parsed[f] !== undefined);
+
+      if (foundValue !== undefined) {
+        const value = parsed[foundValue];
+        if (parsed.notes) {
+          return `${parsed.notes}\n\nResult: ${typeof value === 'number' ? value.toLocaleString() : value}`;
+        }
+        return JSON.stringify(parsed, null, 2);
       }
     } catch {
       // Not valid JSON, ignore
@@ -236,6 +203,11 @@ export async function runRLM(
 
   // Track whether code has been executed (to detect hallucination risk)
   let codeExecuted = false;
+  // Track if the last execution had an error (don't accept answers after errors)
+  let lastExecutionHadError = false;
+  // Track repeated "done" patterns to detect stuck model
+  let doneCount = 0;
+  let lastMeaningfulOutput = "";
 
   try {
     for (let turn = 1; turn <= maxTurns; turn++) {
@@ -252,36 +224,23 @@ export async function runRLM(
       }
       history.push({ role: "assistant", content: response });
 
-      // Check for final answer
-      const finalAnswer = extractFinalAnswer(response);
-      if (finalAnswer !== null) {
-        log(`[Turn ${turn}] Final answer received`);
-
-        // Warn if answering without code execution (high hallucination risk)
-        if (!codeExecuted) {
-          console.warn(`\n⚠️  WARNING: Model provided answer without executing any code.`);
-          console.warn(`   This may indicate hallucinated data. Consider:`);
-          console.warn(`   - Using a more capable model`);
-          console.warn(`   - Making your query more specific (e.g., "Search for X and sum Y")`);
-          console.warn(`   - See README.md Troubleshooting section for details.\n`);
-        }
-
-        // Handle FINAL_VAR
-        if (typeof finalAnswer === "object" && finalAnswer.type === "var") {
-          log(`[Turn ${turn}] Returning variable: ${finalAnswer.name}`);
-          if (finalAnswer.name === "memory") {
-            return sandbox.getMemory();
-          }
-          // Only 'memory' is supported - warn about unknown variable
-          console.warn(`Warning: FINAL_VAR(${finalAnswer.name}) requested but only 'memory' is supported. Returning memory.`);
-          return sandbox.getMemory();
-        }
-        return finalAnswer;
-      }
-
-      // Extract and execute code
+      // Extract and execute code FIRST (before checking final answer)
+      // This ensures if response has both code and final marker, code runs first
       const code = extractCode(response);
       if (code) {
+        // Check if the code block contains <<<FINAL>>> markers (model put answer inside code block)
+        const finalInCode = code.match(/<<<FINAL>>>([\s\S]*?)<<<END>>>/);
+        if (finalInCode) {
+          log(`[Turn ${turn}] Found final answer inside code block`);
+          if (!codeExecuted) {
+            log(`[Turn ${turn}] Rejecting - no code executed yet`);
+            const feedback = `You put <<<FINAL>>> inside the code block. First run code to get the answer, then put <<<FINAL>>> OUTSIDE the code block.`;
+            history.push({ role: "user", content: feedback });
+            continue;
+          }
+          return finalInCode[1].trim();
+        }
+
         codeExecuted = true;
         log(`[Turn ${turn}] Executing code:`);
         log("```javascript");
@@ -313,25 +272,122 @@ export async function runRLM(
           result.logs.forEach(l => log(`  ${l}`));
           const logsText = result.logs.join("\n");
           feedback += `Logs:\n${truncate(logsText)}\n`;
+
+          // Track meaningful output vs "done" / repeated patterns
+          const isDoneOnly = result.logs.length === 1 && result.logs[0].toLowerCase().trim() === "done";
+          const isRepeatedOutput = logsText === lastMeaningfulOutput;
+
+          if (isDoneOnly || isRepeatedOutput) {
+            doneCount++;
+            if (doneCount >= 2 && lastMeaningfulOutput) {
+              log(`[Turn ${turn}] Detected stuck pattern. Auto-terminating with last meaningful output.`);
+              return lastMeaningfulOutput;
+            }
+          } else {
+            // Save meaningful output - prefer computed results over raw data dumps
+            // Look for patterns like "Total: X", "Result: X", "Answer: X", or assignments
+            const hasComputedResult = logsText.match(/(?:total|sum|result|answer|count|average|mean)[^:]*:\s*[\d,.]+/i);
+            // Look for any substantial numeric data (4+ digits) or structured output
+            const hasRawData = logsText.match(/[\d,]{4,}|"[^"]+"\s*:/);
+
+            if (hasComputedResult) {
+              // Prefer computed results
+              lastMeaningfulOutput = logsText;
+              doneCount = 0;
+            } else if (hasRawData && !lastMeaningfulOutput) {
+              // Fall back to raw data only if no computed result yet
+              lastMeaningfulOutput = logsText;
+              doneCount = 0;
+            }
+          }
         }
 
         if (result.error) {
           log(`[Turn ${turn}] Error: ${result.error}`);
           feedback += `Error: ${result.error}\n`;
-        } else if (result.result !== undefined && result.result !== null) {
+          lastExecutionHadError = true;
+        } else {
+          lastExecutionHadError = false;
+        }
+
+        if (result.result !== undefined && result.result !== null) {
           const resultStr = JSON.stringify(result.result, null, 2);
           log(`[Turn ${turn}] Result: ${resultStr}`);
           feedback += `Result: ${truncate(resultStr)}\n`;
         }
 
-        // Remind about final answer format
-        feedback += `\nContinue exploring or provide your final answer.`;
+        // Remind about final answer format (variables DO persist now)
+        feedback += `\nVariables persist between turns. Continue exploring, OR output final answer using <<<FINAL>>> and <<<END>>> tags.`;
 
         history.push({ role: "user", content: feedback });
+
+        // Check for final answer AFTER code execution (same response may have both)
+        // But only if there was no error - let model retry on errors
+        if (!result.error) {
+          const finalAnswer = extractFinalAnswer(response);
+          if (finalAnswer !== null) {
+            log(`[Turn ${turn}] Final answer found after code execution`);
+            if (typeof finalAnswer === "object" && finalAnswer.type === "var") {
+              log(`[Turn ${turn}] Returning variable: ${finalAnswer.name}`);
+              const mem = sandbox.getMemory();
+              // If memory is empty but we have meaningful output, return that instead
+              if (mem.length === 0 && lastMeaningfulOutput) {
+                log(`[Turn ${turn}] Memory empty, returning last meaningful output instead`);
+                return lastMeaningfulOutput;
+              }
+              return mem;
+            }
+            return finalAnswer;
+          }
+        }
       } else {
         log(`[Turn ${turn}] No code block found in response`);
         log(`[Turn ${turn}] Raw response (first 500 chars):`);
         log(response.slice(0, 500));
+
+        // Check for final answer in responses without code
+        const finalAnswer = extractFinalAnswer(response);
+        if (finalAnswer !== null) {
+          // Reject if no code was ever executed
+          if (!codeExecuted) {
+            log(`[Turn ${turn}] Rejecting final answer - no code executed yet`);
+            const feedback = `ERROR: You tried to answer without reading the document.
+
+You MUST write JavaScript code to explore the document first. Example:
+\`\`\`javascript
+const hits = grep("keyword");
+console.log(JSON.stringify(hits, null, 2));
+\`\`\``;
+            history.push({ role: "user", content: feedback });
+            continue;
+          }
+
+          // Reject if last execution had an error (model might be explaining the error, not answering)
+          if (lastExecutionHadError) {
+            log(`[Turn ${turn}] Rejecting final answer - last execution had error, need retry`);
+            const feedback = `The previous code had an error. Fix the code and try again.`;
+            history.push({ role: "user", content: feedback });
+            continue;
+          }
+
+          log(`[Turn ${turn}] Final answer received`);
+          if (typeof finalAnswer === "object" && finalAnswer.type === "var") {
+            log(`[Turn ${turn}] Returning variable: ${finalAnswer.name}`);
+            if (finalAnswer.name === "memory") {
+              return sandbox.getMemory();
+            }
+            return sandbox.getMemory();
+          }
+          return finalAnswer;
+        }
+
+        // Add feedback to prompt the model to provide code
+        const feedback = `No code block found. You MUST write JavaScript code:
+\`\`\`javascript
+const hits = grep("keyword");
+console.log(JSON.stringify(hits, null, 2));
+\`\`\``;
+        history.push({ role: "user", content: feedback });
       }
     }
 
