@@ -7,6 +7,7 @@ import { synthesizeRegex } from "./regex/synthesis.js";
 import { synthesizeExtractor, Extractor } from "./extractor/synthesis.js";
 import { KnowledgeBase, SynthesizedComponent } from "./knowledge-base.js";
 import { EvolutionarySynthesizer } from "./evolutionary.js";
+import { synthesizeProgram, exprToCode, testProgram, type Example } from "./relational/interpreter.js";
 
 /**
  * Example collected from sandbox execution
@@ -345,7 +346,18 @@ export class SynthesisCoordinator {
       output: request.expectedOutputs![i],
     }));
 
-    // Use evolutionary synthesizer first
+    // Try miniKanren-based relational synthesis first (best for pattern-based extraction)
+    const relationalResult = this.tryRelationalSynthesis(examples);
+    if (relationalResult) {
+      return {
+        success: true,
+        synthesisTimeMs: Date.now() - startTime,
+        extractor: relationalResult,
+        extractorCode: relationalResult.code,
+      };
+    }
+
+    // Use evolutionary synthesizer next
     const program = this.evolutionarySynthesizer.initialize(examples);
     const solutions = this.evolutionarySynthesizer.solve(program);
 
@@ -386,6 +398,47 @@ export class SynthesisCoordinator {
       synthesisTimeMs: Date.now() - startTime,
       error: "Could not synthesize extractor",
     };
+  }
+
+  /**
+   * Try miniKanren-based relational synthesis
+   * Uses the relational interpreter to enumerate program structures
+   */
+  private tryRelationalSynthesis(
+    examples: Array<{ input: string; output: unknown }>
+  ): Extractor | null {
+    try {
+      // Convert to Example format for relational synthesis
+      const relationalExamples: Example[] = examples.map((e) => ({
+        input: e.input,
+        output: e.output,
+      }));
+
+      // Use miniKanren to find candidate programs
+      const programs = synthesizeProgram(relationalExamples, 3);
+
+      for (const program of programs) {
+        // Verify the program works on all examples
+        if (testProgram(program, relationalExamples)) {
+          const code = `(input) => ${exprToCode(program)}`;
+          try {
+            const fn = eval(code);
+            return {
+              name: "minikanren_synthesized",
+              description: "Synthesized via miniKanren relational search",
+              code,
+              test: fn,
+            };
+          } catch {
+            // Code compilation failed, try next candidate
+          }
+        }
+      }
+    } catch {
+      // Relational synthesis failed, fall back to other methods
+    }
+
+    return null;
   }
 
   /**

@@ -61,7 +61,8 @@
   },
   "author": "yogthos",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "ramo": "^0.1.2"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

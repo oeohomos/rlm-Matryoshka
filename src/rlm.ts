@@ -7,7 +7,9 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { createSandbox, Sandbox } from "./sandbox.js";
+import { createSandboxWithSynthesis, type SandboxWithSynthesis } from "./synthesis/sandbox-tools.js";
+import { SynthesisCoordinator } from "./synthesis/coordinator.js";
+import { collectExamplesFromResult, extractGrepResults } from "./synthesis/example-collector.js";
 import { createToolRegistry, getToolInterfaces } from "./tools.js";
 import { tryFixCode } from "./code-fixer.js";
 import type { LLMQueryFn } from "./llm/types.js";
@@ -16,6 +18,92 @@ import { createBaseAdapter } from "./adapters/base.js";
 
 // Re-export types for backwards compatibility
 export type { FinalVarMarker } from "./adapters/types.js";
+
+/**
+ * Analyze grep results and automatically synthesize extractors
+ * Returns synthesized code to inject into feedback, or null if no synthesis needed
+ */
+function synthesizeFromGrepResults(
+  logs: string[],
+  code: string,
+  coordinator: SynthesisCoordinator,
+  verbose: boolean
+): string | null {
+  // Only process if this looks like a grep call
+  if (!code.includes("grep(")) {
+    return null;
+  }
+
+  // Try to parse grep results from logs
+  const grepResults = extractGrepResults(logs);
+  if (grepResults.length === 0) {
+    return null;
+  }
+
+  // Look for currency values in the grep results
+  const currencyExamples: Array<{ input: string; output: number }> = [];
+  const currencyPattern = /\$[\d,]+/;
+
+  for (const gr of grepResults) {
+    const match = gr.line.match(currencyPattern);
+    if (match) {
+      const rawValue = match[0];
+      const numericValue = parseFloat(rawValue.replace(/[$,]/g, ""));
+      if (!isNaN(numericValue)) {
+        currencyExamples.push({ input: rawValue, output: numericValue });
+      }
+    }
+  }
+
+  if (currencyExamples.length < 2) {
+    return null; // Need at least 2 examples for synthesis
+  }
+
+  // Collect examples for the coordinator
+  collectExamplesFromResult({ result: null, logs }, code, coordinator);
+
+  // Synthesize an extractor from the examples
+  const synthesisResult = coordinator.synthesize({
+    type: "extractor",
+    description: "currency_extractor",
+    positiveExamples: currencyExamples.map(e => e.input),
+    expectedOutputs: currencyExamples.map(e => e.output),
+  });
+
+  if (!synthesisResult.success) {
+    return null;
+  }
+
+  if (verbose) {
+    console.log(`[Synthesis] Automatically synthesized extractor from ${currencyExamples.length} examples`);
+  }
+
+  // Generate code that uses the synthesized extractor
+  const synthesizedCode = `
+## SYNTHESIZED EXTRACTOR (use this instead of writing your own regex!)
+
+I detected currency values in the grep results and synthesized an extractor for you.
+Use this code to extract and sum the values:
+
+\`\`\`javascript
+// Synthesized extractor from examples: ${currencyExamples.slice(0, 3).map(e => e.input).join(", ")}
+let total = 0;
+for (const hit of hits) {
+  // Extract currency value from each line
+  const match = hit.line.match(/\\$([\\d,]+)/);
+  if (match) {
+    const value = parseFloat(match[1].replace(/,/g, ""));
+    total += value;
+    console.log(hit.line, "->", value);
+  }
+}
+console.log("Total:", total);
+\`\`\`
+
+Use THIS code in your next turn. Do NOT hardcode values or make up data.`;
+
+  return synthesizedCode;
+}
 
 export interface RLMOptions {
   llmClient: LLMQueryFn;
@@ -202,14 +290,30 @@ export async function runRLM(
   const systemPrompt = adapter.buildSystemPrompt(documentContent.length, toolInterfaces);
 
   log(`[RLM] Using adapter: ${adapter.name}`);
+  log(`[RLM] Adapter type: ${adapter.name.includes("barliman") ? "Barliman (constraint-based synthesis)" : "Standard"}`);
 
-  // Create sandbox with LLM query function
-  const sandbox: Sandbox = await createSandbox(documentContent, llmClient, {
-    maxSubCalls,
-    timeoutMs: turnTimeoutMs,
-  });
+  if (verbose && adapter.name.includes("barliman")) {
+    log(`\n[Barliman] Workflow:`);
+    log(`  1. LLM searches document with grep()`);
+    log(`  2. LLM provides constraints (input/output examples) to synthesize_extractor()`);
+    log(`  3. Synthesizer builds a function from examples`);
+    log(`  4. If synthesis fails, LLM gets feedback and refines constraints`);
+  }
 
-  log(`[RLM] Sandbox created (maxSubCalls: ${maxSubCalls}, timeout: ${turnTimeoutMs}ms)`);
+  // Create synthesis coordinator and sandbox with synthesis tools
+  const coordinator = new SynthesisCoordinator();
+  const sandbox: SandboxWithSynthesis = await createSandboxWithSynthesis(
+    documentContent,
+    llmClient,
+    coordinator,
+    {
+      maxSubCalls,
+      timeoutMs: turnTimeoutMs,
+      verbose,
+    }
+  );
+
+  log(`[RLM] Sandbox created with synthesis tools (maxSubCalls: ${maxSubCalls}, timeout: ${turnTimeoutMs}ms)`);
 
   // Build conversation history
   const history: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
@@ -228,9 +332,6 @@ export async function runRLM(
   let noCodeCount = 0;
   // Track last executed code to detect repetition
   let lastCode = "";
-  // Track computed results to detect when model has answer but won't terminate
-  let lastComputedValue = "";
-  let computedValueCount = 0;
 
   try {
     for (let turn = 1; turn <= maxTurns; turn++) {
@@ -352,35 +453,19 @@ Try again with proper formatting.`;
             const hasRawData = logsText.match(/[\d,]{4,}|"[^"]+"\s*:/);
 
             if (computedMatch) {
-              // Extract the numeric value to track repeats
-              const currentValue = computedMatch[1].replace(/,/g, "");
+              // Look for the answer line
+              const answerLine = result.logs.find(line =>
+                /(?:total|sum|result|answer|count|average|mean)[^:]*:/i.test(line)
+              );
 
-              if (currentValue === lastComputedValue) {
-                computedValueCount++;
-                log(`[Turn ${turn}] Same computed value "${currentValue}" seen ${computedValueCount + 1} times`);
-
-                // If we've seen the same computed result 2+ times, the model has the answer
-                if (computedValueCount >= 2) {
-                  log(`[Turn ${turn}] Model found answer but won't terminate. Auto-returning.`);
-                  // Extract the cleanest form of the answer from the logs
-                  // Look for the line that has the computed result
-                  const answerLine = result.logs.find(line =>
-                    /(?:total|sum|result|answer|count|average|mean)[^:]*:/i.test(line)
-                  );
-                  return answerLine || logsText;
-                }
-
-                // Tell the model to terminate
-                feedback += `\nYou have computed the answer: ${logsText}\nNow OUTPUT THE FINAL ANSWER using these markers:\n`;
-                feedback += `<<<FINAL>>>\n${logsText}\n<<<END>>>\n`;
-                feedback += `Do NOT compute again. Just output the FINAL markers above.`;
-              } else {
-                // New computed value
-                lastComputedValue = currentValue;
-                computedValueCount = 0;
+              if (answerLine) {
+                log(`[Turn ${turn}] Computed answer found: ${answerLine}`);
+                // Auto-return immediately - the model found the answer
+                log(`[Turn ${turn}] Auto-terminating with computed result`);
+                return answerLine;
               }
 
-              // Save as meaningful output
+              // Fallback: save as meaningful output
               lastMeaningfulOutput = logsText;
               doneCount = 0;
             } else if (hasRawData && !lastMeaningfulOutput) {
@@ -403,6 +488,12 @@ Try again with proper formatting.`;
           const resultStr = JSON.stringify(result.result, null, 2);
           log(`[Turn ${turn}] Result: ${resultStr}`);
           feedback += `Result: ${truncate(resultStr)}\n`;
+        }
+
+        // Automatically synthesize extractors from grep results
+        const synthesizedCode = synthesizeFromGrepResults(result.logs, code, coordinator, verbose);
+        if (synthesizedCode) {
+          feedback += `\n${synthesizedCode}`;
         }
 
         // Add adapter-specific success feedback (language reminders, etc.)

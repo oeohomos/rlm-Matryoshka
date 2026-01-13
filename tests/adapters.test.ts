@@ -43,10 +43,10 @@ describe("Adapter Registry", () => {
   });
 
   describe("detectAdapter", () => {
-    it("should detect qwen adapter from model name", () => {
-      expect(detectAdapter("qwen2.5-coder:7b")).toBe("qwen");
-      expect(detectAdapter("qwen-1.5:14b")).toBe("qwen");
-      expect(detectAdapter("codeqwen:latest")).toBe("qwen");
+    it("should detect qwen-barliman adapter from model name", () => {
+      expect(detectAdapter("qwen2.5-coder:7b")).toBe("qwen-barliman");
+      expect(detectAdapter("qwen-1.5:14b")).toBe("qwen-barliman");
+      expect(detectAdapter("codeqwen:latest")).toBe("qwen-barliman");
     });
 
     it("should detect deepseek adapter from model name", () => {
@@ -69,7 +69,7 @@ describe("Adapter Registry", () => {
 
     it("should auto-detect when no explicit adapter provided", () => {
       const adapter = resolveAdapter("qwen2.5-coder:7b");
-      expect(adapter.name).toBe("qwen");
+      expect(adapter.name).toBe("qwen-barliman");
     });
 
     it("should fall back to base for unknown models", () => {

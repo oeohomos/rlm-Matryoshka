@@ -188,7 +188,8 @@ Final text
       );
 
       expect(feedback).toContain("synthesize_regex");
-      expect(feedback).toContain("REGEX ERROR");
+      // Error feedback suggests using synthesis instead of manual regex
+      expect(feedback).toContain("Error:");
     });
 
     it("should extract code from response", () => {

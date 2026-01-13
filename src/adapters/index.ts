@@ -11,6 +11,7 @@ import { createBaseAdapter } from "./base.js";
 import { createQwenAdapter } from "./qwen.js";
 import { createDeepSeekAdapter } from "./deepseek.js";
 import { createQwenSynthesisAdapter } from "./qwen-synthesis.js";
+import { createQwenBarlimanAdapter } from "./qwen-barliman.js";
 
 // Re-export types
 export type { ModelAdapter, FinalVarMarker, AdapterFactory } from "./types.js";
@@ -23,15 +24,17 @@ const adapterFactories: Record<string, AdapterFactory> = {
   qwen: createQwenAdapter,
   deepseek: createDeepSeekAdapter,
   "qwen-synthesis": createQwenSynthesisAdapter,
+  "qwen-barliman": createQwenBarlimanAdapter,
 };
 
 /**
  * Model name patterns for auto-detection
  * Order matters - first match wins
+ * Uses qwen-barliman by default for qwen models (Barliman-style constraint-based synthesis)
  */
 const modelPatterns: Array<{ pattern: RegExp; adapter: string }> = [
-  { pattern: /^qwen/i, adapter: "qwen" },
-  { pattern: /^codeqwen/i, adapter: "qwen" },
+  { pattern: /^qwen/i, adapter: "qwen-barliman" },
+  { pattern: /^codeqwen/i, adapter: "qwen-barliman" },
   { pattern: /^deepseek/i, adapter: "deepseek" },
   // Add more patterns as needed
   // { pattern: /^llama/i, adapter: "llama" },

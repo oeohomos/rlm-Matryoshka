@@ -8,6 +8,7 @@
 
 import type { ModelAdapter, FinalVarMarker } from "./types.js";
 import { createQwenAdapter } from "./qwen.js";
+import { analyzeError, formatErrorFeedback } from "../feedback/error-analyzer.js";
 
 /**
  * Build system prompt with synthesis instructions
@@ -127,65 +128,139 @@ Output ONLY JavaScript. Use grep() first, then synthesize patterns.
 }
 
 /**
- * Error feedback with synthesis suggestions
+ * Error feedback with synthesis suggestions and Levenshtein-based hints
  */
-function getErrorFeedback(error: string): string {
-  // Check for regex-related errors
-  if (
-    error.includes("Invalid regular expression") ||
-    error.includes("SyntaxError") && error.toLowerCase().includes("regex")
-  ) {
-    return `Code error: ${error}
+function getErrorFeedback(error: string, code?: string): string {
+  // Use the error analyzer for intelligent feedback
+  const analysis = analyzeError(error, code);
+  const feedback = formatErrorFeedback(analysis);
 
-**REGEX ERROR!** Do not write regex manually. Use synthesize_regex() instead:
+  // Add specific code examples based on error type
+  let codeExample = "";
 
+  switch (analysis.errorType) {
+    case "invalid_regex_flags":
+      codeExample = `
+**CORRECT USAGE:**
 \`\`\`javascript
-// Collect example strings that match what you need
-const examples = hits.slice(0, 5).map(h => h.line);
+// Search for a pattern (single argument)
+const hits = grep("SALES_DATA");
 
-// Let the synthesizer create a correct regex
-const regex = synthesize_regex(examples);
-console.log("Synthesized:", regex);
+// Search with OR pattern (use | inside the pattern)
+const hits = grep("sales|revenue|total");
 
-// Then use it with extract_with_regex
+// Case-insensitive search (second arg is flags only: g, i, m, s, u, y)
+const hits = grep("pattern", "gi");
+\`\`\``;
+      break;
+
+    case "undefined_variable":
+      codeExample = `
+**FIX:** Define variables in the same code block:
+\`\`\`javascript
+// Step 1: Search and store results
+const hits = grep("SALES_DATA");
+console.log("Found", hits.length, "results");
+
+// Step 2: Process in the SAME block
+for (const hit of hits) {
+  console.log(hit.line);
+}
+\`\`\``;
+      break;
+
+    case "property_of_undefined":
+      codeExample = `
+**FIX:** Check variables exist before using:
+\`\`\`javascript
+const hits = grep("pattern");
+if (hits && hits.length > 0) {
+  const examples = hits.slice(0, 5).map(h => h.line);
+  console.log(examples);
+} else {
+  console.log("No results found, trying different pattern...");
+  const hits2 = grep("alternative_pattern");
+}
+\`\`\``;
+      break;
+
+    case "not_a_function":
+      codeExample = `
+**AVAILABLE FUNCTIONS:**
+\`\`\`javascript
+// Search
+const hits = grep("pattern");
+
+// Synthesis (auto-generate patterns from examples!)
+const extractor = synthesize_extractor([
+  { input: "$1,000", output: 1000 },
+  { input: "$2,500", output: 2500 },
+]);
+const value = extractor("$5,000"); // Returns 5000
+
+// Regex synthesis
+const regex = synthesize_regex(["$100", "$200"]);
+const extracted = extract_with_regex(regex, "$500");
+\`\`\``;
+      break;
+
+    case "invalid_regex":
+      codeExample = `
+**USE synthesize_regex() INSTEAD OF MANUAL REGEX:**
+\`\`\`javascript
+// DON'T write regex manually - use synthesize_regex()!
+const regex = synthesize_regex(["$1,000", "$2,500", "$10,000"]);
+console.log("Synthesized pattern:", regex);
+
+// Then use the synthesized pattern
 const value = extract_with_regex(regex, hit.line);
 \`\`\``;
-  }
+      break;
 
-  // Check for .match() on grep result errors
-  if (
-    error.includes("is not a function") &&
-    (error.includes("match") || error.includes("split") || error.includes("replace"))
-  ) {
-    return `Code error: ${error}
-
-**IMPORTANT:** grep() returns objects with { match, line, lineNum }.
-Use hit.line to get the string, or better yet, use extract_with_regex():
-
+    case "string_method_on_object":
+      codeExample = `
+**FIX:** Use hit.line to access the string:
 \`\`\`javascript
+const hits = grep("SALES_DATA");
 for (const hit of hits) {
-  // Option 1: Use hit.line with extract_with_regex
-  const value = extract_with_regex(regex, hit.line);
-
-  // Option 2: Use hit.line directly
-  const numMatch = hit.line.match(/pattern/);
-
-  if (value) {
-    console.log(value);
+  // WRONG: hit.match(/pattern/)
+  // RIGHT: hit.line.match(/pattern/)
+  const match = hit.line.match(/\\$[\\d,]+/);
+  if (match) {
+    console.log("Found:", match[0]);
   }
 }
 \`\`\``;
+      break;
+
+    default:
+      codeExample = `
+**GENERAL APPROACH:**
+\`\`\`javascript
+// 1. Search for data
+const hits = grep("KEYWORD");
+console.log(JSON.stringify(hits.slice(0, 3), null, 2));
+
+// 2. Synthesize extractor from examples
+const extractor = synthesize_extractor([
+  { input: hits[0].line.match(/\\$[\\d,]+/)[0], output: parseFloat(...) },
+  { input: hits[1].line.match(/\\$[\\d,]+/)[0], output: parseFloat(...) },
+]);
+
+// 3. Apply to all data
+let total = 0;
+for (const hit of hits) {
+  const match = hit.line.match(/\\$[\\d,]+/);
+  if (match) total += extractor(match[0]);
+}
+console.log("Total:", total);
+\`\`\``;
   }
 
-  // Generic error
-  return `Code error: ${error}
+  return `${feedback}
+${codeExample}
 
-Fix the bug and output ONLY a JavaScript code block.
-Consider using synthesize_regex() or synthesize_extractor() for pattern matching:
-
-\`\`\`javascript
-// your fixed code here
-\`\`\``;
+Output ONLY a \`\`\`javascript code block with the fix:`;
 }
 
 /**

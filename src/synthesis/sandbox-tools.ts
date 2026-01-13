@@ -21,6 +21,10 @@ export interface SandboxWithSynthesis {
   getCoordinator(): SynthesisCoordinator;
 }
 
+export interface SandboxWithSynthesisOptions extends SandboxOptions {
+  verbose?: boolean;
+}
+
 /**
  * Create a sandboxed execution environment with synthesis capabilities
  */
@@ -28,9 +32,13 @@ export async function createSandboxWithSynthesis(
   context: string,
   llmQueryFn: LLMQueryFn,
   coordinator: SynthesisCoordinator,
-  options: SandboxOptions = {}
+  options: SandboxWithSynthesisOptions = {}
 ): Promise<SandboxWithSynthesis> {
-  const { maxSubCalls = 10 } = options;
+  const { maxSubCalls = 10, verbose = false } = options;
+
+  const log = (msg: string) => {
+    if (verbose) console.log(msg);
+  };
 
   // Persistent state across executions
   const logs: string[] = [];
@@ -62,7 +70,14 @@ export async function createSandboxWithSynthesis(
       negative: string[] = []
     ): string | null => {
       if (!positive || positive.length === 0) {
+        log(`[Synthesis] synthesize_regex called with empty examples`);
         return null;
+      }
+
+      log(`[Synthesis] synthesize_regex called with ${positive.length} positive examples:`);
+      positive.slice(0, 3).forEach((ex, i) => log(`  [${i + 1}] "${ex}"`));
+      if (negative.length > 0) {
+        log(`  + ${negative.length} negative examples`);
       }
 
       const result = coordinator.synthesize({
@@ -72,14 +87,31 @@ export async function createSandboxWithSynthesis(
         negativeExamples: negative,
       });
 
-      return result.success ? result.regex ?? null : null;
+      if (result.success && result.regex) {
+        log(`[Synthesis] SUCCESS: Synthesized regex pattern: ${result.regex}`);
+        log(`[Synthesis] Time: ${result.synthesisTimeMs}ms`);
+        return result.regex;
+      } else {
+        log(`[Synthesis] FAILED: Could not synthesize regex from examples`);
+        if (result.error) log(`[Synthesis] Error: ${result.error}`);
+        return null;
+      }
     },
 
     synthesize_extractor: (
       examples: Array<{ input: string; output: unknown }>
     ): ((s: string) => unknown) | null => {
       if (!examples || examples.length === 0) {
+        log(`[Synthesis] synthesize_extractor called with empty examples`);
         return null;
+      }
+
+      log(`[Synthesis] synthesize_extractor called with ${examples.length} constraints:`);
+      examples.slice(0, 3).forEach((ex, i) => {
+        log(`  [${i + 1}] "${ex.input}" -> ${JSON.stringify(ex.output)}`);
+      });
+      if (examples.length > 3) {
+        log(`  ... and ${examples.length - 3} more`);
       }
 
       const result = coordinator.synthesize({
@@ -90,16 +122,23 @@ export async function createSandboxWithSynthesis(
       });
 
       if (result.success && result.extractor) {
+        log(`[Synthesis] SUCCESS: Synthesized extractor function`);
+        log(`[Synthesis] Generated code: ${result.extractorCode?.slice(0, 100)}...`);
+        log(`[Synthesis] Time: ${result.synthesisTimeMs}ms`);
         return result.extractor.test;
+      } else {
+        log(`[Synthesis] FAILED: Could not synthesize extractor from constraints`);
+        if (result.error) log(`[Synthesis] Error: ${result.error}`);
+        log(`[Synthesis] Hint: Try different input/output pairs or ensure outputs are consistent`);
+        return null;
       }
-
-      return null;
     },
 
     get_extractor_code: (
       examples: Array<{ input: string; output: unknown }>
     ): string | null => {
       if (!examples || examples.length === 0) {
+        log(`[Synthesis] get_extractor_code called with empty examples`);
         return null;
       }
 
@@ -109,11 +148,14 @@ export async function createSandboxWithSynthesis(
         if (inputMap.has(ex.input)) {
           const existing = inputMap.get(ex.input);
           if (existing !== ex.output) {
+            log(`[Synthesis] CONFLICT: Same input "${ex.input}" has different outputs: ${JSON.stringify(existing)} vs ${JSON.stringify(ex.output)}`);
             return null; // Conflicting outputs for same input
           }
         }
         inputMap.set(ex.input, ex.output);
       }
+
+      log(`[Synthesis] get_extractor_code called with ${examples.length} constraints`);
 
       const result = coordinator.synthesize({
         type: "extractor",
@@ -123,9 +165,11 @@ export async function createSandboxWithSynthesis(
       });
 
       if (result.success && result.extractorCode) {
+        log(`[Synthesis] SUCCESS: Generated code: ${result.extractorCode.slice(0, 100)}...`);
         return result.extractorCode;
       }
 
+      log(`[Synthesis] FAILED: Could not generate extractor code`);
       return null;
     },
 
@@ -436,6 +480,8 @@ export async function createSandboxWithSynthesis(
       : lastLine;
 
     const isStatement =
+      lastLine.startsWith("//") ||      // Comment - don't wrap
+      lastLine.startsWith("/*") ||      // Block comment start
       lastLine.startsWith("const ") ||
       lastLine.startsWith("let ") ||
       lastLine.startsWith("var ") ||
