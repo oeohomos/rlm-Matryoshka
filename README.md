@@ -73,7 +73,7 @@ rlm --help
 
 ### MCP Integration
 
-RLM includes an MCP (Model Context Protocol) server that exposes the `analyze_document` tool. This allows Claude to analyze documents that exceed its context window.
+RLM includes an MCP (Model Context Protocol) server that exposes the `analyze_document` tool. This allows coding agents like [Crush](https://github.com/charmbracelet/crush) to analyze documents that exceed its context window.
 
 #### MCP Tool: `analyze_document`
 
@@ -84,58 +84,25 @@ RLM includes an MCP (Model Context Protocol) server that exposes the `analyze_do
 | `maxTurns` | number | No | Maximum exploration turns (default: 10) |
 | `timeoutMs` | number | No | Timeout per turn in milliseconds (default: 30000) |
 
-#### Claude Code
+#### Crush MCP example
 
-Add the MCP server to Claude Code:
-
-```bash
-# Add to user config (available in all projects)
-claude mcp add --transport stdio --scope user rlm -- rlm-mcp
-
-# Or add to current project only
-claude mcp add --transport stdio rlm -- rlm-mcp
-
-# Verify it's connected
-claude mcp list
-```
-
-Then ask Claude to analyze documents:
-
-> Use the analyze_document tool to find all sales figures in /path/to/report.txt and calculate the total
-
-#### Claude Desktop
-
-Add to your Claude Desktop config file:
-
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-Using npx (no global install needed):
+Add to your `crush.json` config:
 
 ```json
 {
-  "mcpServers": {
+  "mcp": {
     "rlm": {
-      "command": "npx",
-      "args": ["-y", "-p", "matryoshka-rlm", "rlm-mcp"]
-    }
-  }
-}
-```
-
-Or if installed globally:
-
-```json
-{
-  "mcpServers": {
-    "rlm": {
+      "type": "stdio",
       "command": "rlm-mcp"
     }
   }
 }
 ```
+Then ask Crush to analyze documents:
 
-Restart Claude Desktop after updating the config. Look for the hammer icon to confirm the server loaded.
+> Use the analyze_document tool to find all sales figures in /path/to/report.txt and calculate the total
+
+See [Crush](https://github.com/charmbracelet/crush) for more details.
 
 #### Testing the MCP Server
 
