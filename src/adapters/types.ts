@@ -52,6 +52,18 @@ export interface ModelAdapter {
    * @param error - Error message from execution
    */
   getErrorFeedback(error: string): string;
+
+  /**
+   * Get feedback message after successful code execution
+   * Used to remind model about language requirements between turns
+   */
+  getSuccessFeedback(): string;
+
+  /**
+   * Get feedback message when model repeats the same code
+   * Encourages trying a different approach
+   */
+  getRepeatedCodeFeedback(): string;
 }
 
 /**

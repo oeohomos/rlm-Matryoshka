@@ -291,15 +291,7 @@ Try again with proper formatting.`;
         const isRepeatedCode = code.trim() === lastCode.trim();
         if (isRepeatedCode) {
           log(`[Turn ${turn}] WARNING: Repeated code detected`);
-          const feedback = `ERROR: You are repeating the same code. This will give the same output.
-
-Try a DIFFERENT approach:
-- Use grep("sales") to search for sales-related data
-- Use grep("SALES_DATA") to find specific data entries
-- After finding data, extract numbers and compute the answer
-
-Write NEW code now:`;
-          history.push({ role: "user", content: feedback });
+          history.push({ role: "user", content: adapter.getRepeatedCodeFeedback() });
           continue;
         }
         lastCode = code;
@@ -413,8 +405,8 @@ Write NEW code now:`;
           feedback += `Result: ${truncate(resultStr)}\n`;
         }
 
-        // Remind about final answer format (variables DO persist now)
-        feedback += `\nVariables persist between turns. Continue exploring, OR output final answer using <<<FINAL>>> and <<<END>>> tags.`;
+        // Add adapter-specific success feedback (language reminders, etc.)
+        feedback += `\n\n${adapter.getSuccessFeedback()}`;
 
         history.push({ role: "user", content: feedback });
 

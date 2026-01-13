@@ -191,6 +191,39 @@ Fix the bug and output ONLY a JavaScript code block:
 }
 
 /**
+ * Success feedback for Qwen - emphasizes JavaScript requirement
+ * This is the key feedback that prevents Python on turn 2+
+ */
+function getSuccessFeedback(): string {
+  return `REMINDER: Output ONLY \`\`\`javascript code blocks. NO PYTHON.
+Variables persist between turns. Continue exploring, OR output final answer using <<<FINAL>>> and <<<END>>> tags.`;
+}
+
+/**
+ * Repeated code feedback for Qwen - emphasizes JavaScript
+ */
+function getRepeatedCodeFeedback(): string {
+  return `ERROR: You are repeating the same code. This will give the same output.
+
+Try a DIFFERENT approach using JavaScript:
+\`\`\`javascript
+// Use different search terms
+const hits = grep("different_keyword");
+// Or process existing data differently
+let total = 0;
+for (const hit of hits) {
+  const numMatch = hit.line.match(/\\$([\\d,]+)/);
+  if (numMatch) {
+    total += parseFloat(numMatch[1].replace(/,/g, ""));
+  }
+}
+console.log("Total:", total);
+\`\`\`
+
+Write NEW JavaScript code now:`;
+}
+
+/**
  * Create the Qwen adapter instance
  */
 export function createQwenAdapter(): ModelAdapter {
@@ -201,5 +234,7 @@ export function createQwenAdapter(): ModelAdapter {
     extractFinalAnswer,
     getNoCodeFeedback,
     getErrorFeedback,
+    getSuccessFeedback,
+    getRepeatedCodeFeedback,
   };
 }

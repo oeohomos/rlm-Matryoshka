@@ -92,6 +92,8 @@ describe("Adapter Registry", () => {
         extractFinalAnswer: () => null,
         getNoCodeFeedback: () => "No code",
         getErrorFeedback: () => "Error",
+        getSuccessFeedback: () => "Success",
+        getRepeatedCodeFeedback: () => "Repeated",
       };
 
       registerAdapter("custom", () => customAdapter);
@@ -177,6 +179,18 @@ describe("Base Adapter", () => {
       const feedback = adapter.getErrorFeedback("TypeError: x is undefined");
       expect(feedback).toContain("error");
     });
+
+    it("should provide success feedback", () => {
+      const feedback = adapter.getSuccessFeedback();
+      expect(feedback).toContain("persist");
+      expect(feedback).toContain("FINAL");
+    });
+
+    it("should provide repeated code feedback", () => {
+      const feedback = adapter.getRepeatedCodeFeedback();
+      expect(feedback).toContain("repeating");
+      expect(feedback).toContain("DIFFERENT");
+    });
   });
 });
 
@@ -222,6 +236,20 @@ describe("Qwen Adapter", () => {
       const response = '{"foo": "bar", "baz": 123}';
       const result = adapter.extractFinalAnswer(response);
       expect(result).toBeNull();
+    });
+  });
+
+  describe("feedback methods", () => {
+    it("should provide success feedback with JavaScript emphasis", () => {
+      const feedback = adapter.getSuccessFeedback();
+      expect(feedback).toContain("javascript");
+      expect(feedback).toContain("NO PYTHON");
+    });
+
+    it("should provide repeated code feedback with JavaScript example", () => {
+      const feedback = adapter.getRepeatedCodeFeedback();
+      expect(feedback).toContain("JavaScript");
+      expect(feedback).toContain("```javascript");
     });
   });
 });

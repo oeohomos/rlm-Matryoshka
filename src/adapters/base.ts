@@ -158,6 +158,29 @@ function getErrorFeedback(error: string): string {
 }
 
 /**
+ * Get feedback message after successful code execution
+ * Generic reminder about continuing exploration or providing final answer
+ */
+function getSuccessFeedback(): string {
+  return `Variables persist between turns. Continue exploring, OR output final answer using <<<FINAL>>> and <<<END>>> tags.`;
+}
+
+/**
+ * Get feedback message when model repeats the same code
+ * Encourages a different approach
+ */
+function getRepeatedCodeFeedback(): string {
+  return `ERROR: You are repeating the same code. This will give the same output.
+
+Try a DIFFERENT approach:
+- Use different search terms with grep()
+- Process data differently
+- Look at different sections of the document
+
+Write NEW code now.`;
+}
+
+/**
  * Create the base adapter instance
  */
 export function createBaseAdapter(): ModelAdapter {
@@ -168,6 +191,8 @@ export function createBaseAdapter(): ModelAdapter {
     extractFinalAnswer,
     getNoCodeFeedback,
     getErrorFeedback,
+    getSuccessFeedback,
+    getRepeatedCodeFeedback,
   };
 }
 
@@ -178,4 +203,6 @@ export {
   extractFinalAnswer as baseExtractFinalAnswer,
   getNoCodeFeedback as baseGetNoCodeFeedback,
   getErrorFeedback as baseGetErrorFeedback,
+  getSuccessFeedback as baseGetSuccessFeedback,
+  getRepeatedCodeFeedback as baseGetRepeatedCodeFeedback,
 };

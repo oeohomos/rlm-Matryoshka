@@ -117,6 +117,30 @@ Please fix the code and provide a corrected version:
 }
 
 /**
+ * Success feedback for DeepSeek - emphasizes JavaScript requirement
+ */
+function getSuccessFeedback(): string {
+  return `Output ONLY JavaScript code blocks. Variables persist between turns.
+Continue exploring, OR output final answer using <<<FINAL>>> and <<<END>>> tags.`;
+}
+
+/**
+ * Repeated code feedback for DeepSeek
+ */
+function getRepeatedCodeFeedback(): string {
+  return `ERROR: You are repeating the same code. This will give the same output.
+
+Try a DIFFERENT approach:
+\`\`\`javascript
+// Use different search terms or process data differently
+const hits = grep("different_keyword");
+console.log(JSON.stringify(hits, null, 2));
+\`\`\`
+
+Write NEW JavaScript code now.`;
+}
+
+/**
  * Create the DeepSeek adapter instance
  */
 export function createDeepSeekAdapter(): ModelAdapter {
@@ -127,5 +151,7 @@ export function createDeepSeekAdapter(): ModelAdapter {
     extractFinalAnswer,
     getNoCodeFeedback,
     getErrorFeedback,
+    getSuccessFeedback,
+    getRepeatedCodeFeedback,
   };
 }

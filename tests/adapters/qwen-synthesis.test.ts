@@ -20,6 +20,33 @@ describe("Qwen Synthesis Adapter", () => {
       expect(typeof adapter.extractFinalAnswer).toBe("function");
       expect(typeof adapter.getNoCodeFeedback).toBe("function");
       expect(typeof adapter.getErrorFeedback).toBe("function");
+      expect(typeof adapter.getSuccessFeedback).toBe("function");
+      expect(typeof adapter.getRepeatedCodeFeedback).toBe("function");
+    });
+  });
+
+  describe("getSuccessFeedback", () => {
+    it("should emphasize JavaScript only", () => {
+      const feedback = adapter.getSuccessFeedback();
+      expect(feedback).toContain("javascript");
+      expect(feedback).toContain("NO PYTHON");
+    });
+
+    it("should remind about synthesis tools", () => {
+      const feedback = adapter.getSuccessFeedback();
+      expect(feedback).toContain("synthesize");
+    });
+  });
+
+  describe("getRepeatedCodeFeedback", () => {
+    it("should emphasize JavaScript", () => {
+      const feedback = adapter.getRepeatedCodeFeedback();
+      expect(feedback).toContain("JavaScript");
+    });
+
+    it("should suggest synthesis tools", () => {
+      const feedback = adapter.getRepeatedCodeFeedback();
+      expect(feedback).toContain("synthesize_regex");
     });
   });
 
@@ -45,6 +72,14 @@ describe("Qwen Synthesis Adapter", () => {
 
       // Should discourage manual regex
       expect(prompt.toLowerCase()).toContain("do not write regex");
+    });
+
+    it("should strongly prohibit Python", () => {
+      const prompt = adapter.buildSystemPrompt(1000, "");
+
+      // Should have strong Python prohibition
+      expect(prompt).toContain("NO PYTHON");
+      expect(prompt).toContain("JavaScript ONLY");
     });
 
     it("should include tool interfaces", () => {
@@ -131,6 +166,13 @@ describe("Qwen Synthesis Adapter", () => {
       const feedback = adapter.getNoCodeFeedback();
 
       expect(feedback).toContain("```javascript");
+    });
+
+    it("should strongly reject Python", () => {
+      const feedback = adapter.getNoCodeFeedback();
+
+      expect(feedback).toContain("PYTHON IS NOT SUPPORTED");
+      expect(feedback).toContain("JavaScript");
     });
   });
 
