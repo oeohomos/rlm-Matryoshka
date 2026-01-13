@@ -42,7 +42,7 @@ export function createToolRegistry(): ToolRegistry {
       {
         name: "llm_query",
         description:
-          "Query a sub-LLM to process a chunk of text. Expensive operation - batch related information when possible to minimize calls.",
+          "Query a sub-LLM to process a chunk of text. Expensive operation - batch related information when possible to minimize calls. Use format: 'json' for structured data extraction.",
         parameters: {
           type: "object",
           properties: {
@@ -50,12 +50,41 @@ export function createToolRegistry(): ToolRegistry {
               type: "string",
               description: "The prompt to send to the sub-LLM for processing",
             },
+            options: {
+              type: "object",
+              description: "Optional settings: { format: 'json' | 'text' }. Use 'json' to force structured JSON output.",
+              optional: true,
+            },
           },
           required: ["prompt"],
         },
         returns: {
           type: "Promise<string>",
-          description: "The sub-LLM's response text",
+          description: "The sub-LLM's response text (or JSON string if format: 'json')",
+        },
+      },
+      {
+        name: "batch_llm_query",
+        description:
+          "Execute multiple LLM queries in parallel. Much faster than sequential llm_query calls when you need to process multiple chunks or sections. All prompts are sent simultaneously.",
+        parameters: {
+          type: "object",
+          properties: {
+            prompts: {
+              type: "array",
+              description: "Array of prompt strings to execute in parallel",
+            },
+            options: {
+              type: "object",
+              description: "Optional settings: { format: 'json' | 'text' }. Applied to all prompts.",
+              optional: true,
+            },
+          },
+          required: ["prompts"],
+        },
+        returns: {
+          type: "Promise<string[]>",
+          description: "Array of responses in the same order as the input prompts",
         },
       },
       {
@@ -143,6 +172,76 @@ export function createToolRegistry(): ToolRegistry {
         returns: {
           type: "string[] | null",
           description: "Array of matches or null if no matches",
+        },
+      },
+      {
+        name: "grep",
+        description:
+          "Fast regex search with line numbers. More efficient than context.match for finding specific patterns. Returns matches with line numbers and character indices.",
+        parameters: {
+          type: "object",
+          properties: {
+            pattern: {
+              type: "string",
+              description: "Regex pattern to search for",
+            },
+            flags: {
+              type: "string",
+              description:
+                'Regex flags (g and m are included by default for global multiline search)',
+              optional: true,
+            },
+          },
+          required: ["pattern"],
+        },
+        returns: {
+          type: "Array<{ match: string; lineNum: number; index: number; groups: string[] }>",
+          description:
+            "Matches with line numbers (1-based), character index, and capture groups",
+        },
+      },
+      {
+        name: "count_tokens",
+        description:
+          "Estimate the token count of text. Useful for checking if a section will fit in an LLM call. Uses word-based heuristics (most words = 1 token).",
+        parameters: {
+          type: "object",
+          properties: {
+            text: {
+              type: "string",
+              description: "Text to count tokens for (defaults to full context if omitted)",
+              optional: true,
+            },
+          },
+          required: [],
+        },
+        returns: {
+          type: "number",
+          description: "Estimated token count",
+        },
+      },
+      {
+        name: "locate_line",
+        description:
+          "Extract lines by line number (1-based). More precise than slice() for line-based navigation. Supports negative indices to count from end.",
+        parameters: {
+          type: "object",
+          properties: {
+            start: {
+              type: "number",
+              description: "Start line number (1-based, or negative to count from end)",
+            },
+            end: {
+              type: "number",
+              description: "End line number (inclusive, defaults to start for single line)",
+              optional: true,
+            },
+          },
+          required: ["start"],
+        },
+        returns: {
+          type: "string",
+          description: "The extracted lines joined with newlines",
         },
       },
     ],

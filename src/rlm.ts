@@ -7,7 +7,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { createSandbox, Sandbox } from "./sandbox.js";
+import { createSandbox, Sandbox, generateDocumentOutline, formatOutlineForPrompt } from "./sandbox.js";
 import { createToolRegistry, getToolInterfaces } from "./tools.js";
 import { tryFixCode } from "./code-fixer.js";
 import type { LLMQueryFn } from "./llm/types.js";
@@ -18,6 +18,8 @@ export interface RLMOptions {
   turnTimeoutMs?: number;
   maxSubCalls?: number;
   verbose?: boolean;
+  /** Enable semantic peeking - pre-compute document outline for system prompt (default: true) */
+  semanticPeeking?: boolean;
 }
 
 export interface FinalVarMarker {
@@ -27,10 +29,14 @@ export interface FinalVarMarker {
 
 /**
  * Build the system prompt for the RLM
+ * @param contextLength - Length of the document in characters
+ * @param toolInterfaces - TypeScript interface definitions for available tools
+ * @param documentOutline - Optional pre-computed outline of the document
  */
 export function buildSystemPrompt(
   contextLength: number,
-  toolInterfaces: string
+  toolInterfaces: string,
+  documentOutline?: string
 ): string {
   const formattedLength = contextLength.toLocaleString();
 
@@ -55,7 +61,7 @@ If you provide a final answer without first running code to verify the data, you
 ## Available Tools and Variables
 
 ${toolInterfaces}
-
+${documentOutline ? `\n${documentOutline}\n` : ""}
 ## Guidelines
 
 1. **Start with exploration**: Use \`text_stats()\` to understand document structure without reading all tokens.
@@ -183,7 +189,7 @@ export async function runRLM(
   filePath: string,
   options: RLMOptions
 ): Promise<unknown> {
-  const { llmClient, maxTurns = 10, turnTimeoutMs = 30000, maxSubCalls = 10, verbose = false } = options;
+  const { llmClient, maxTurns = 10, turnTimeoutMs = 30000, maxSubCalls = 10, verbose = false, semanticPeeking = true } = options;
 
   const log = (msg: string) => {
     if (verbose) console.log(msg);
@@ -200,10 +206,18 @@ export async function runRLM(
 
   log(`\n[RLM] Loaded document: ${documentContent.length.toLocaleString()} characters`);
 
-  // Build system prompt
+  // Build system prompt with optional document outline (semantic peeking)
   const registry = createToolRegistry();
   const toolInterfaces = getToolInterfaces(registry);
-  const systemPrompt = buildSystemPrompt(documentContent.length, toolInterfaces);
+
+  let documentOutline: string | undefined;
+  if (semanticPeeking) {
+    const outline = generateDocumentOutline(documentContent);
+    documentOutline = formatOutlineForPrompt(outline);
+    log(`[RLM] Document outline: ${outline.format} format, ${outline.sections.length} sections, ${outline.patterns.length} patterns`);
+  }
+
+  const systemPrompt = buildSystemPrompt(documentContent.length, toolInterfaces, documentOutline);
 
   // Create sandbox with LLM query function
   const sandbox: Sandbox = await createSandbox(documentContent, llmClient, {

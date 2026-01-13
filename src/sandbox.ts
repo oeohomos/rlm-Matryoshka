@@ -88,7 +88,11 @@ export interface Sandbox {
   dispose(): void;
 }
 
-type LLMQueryFn = (prompt: string) => Promise<string>;
+interface LLMQueryOptions {
+  format?: "json" | "text";
+}
+
+type LLMQueryFn = (prompt: string, options?: LLMQueryOptions) => Promise<string>;
 
 /**
  * Create a sandboxed execution environment for RLM code
@@ -156,8 +160,8 @@ export async function createSandbox(
     // Lines array for fuzzy search
     __linesArray: lines,
 
-    // LLM query bridge (async)
-    __llmQueryBridge: async (prompt: string): Promise<string> => {
+    // LLM query bridge (async) - accepts optional format option
+    __llmQueryBridge: async (prompt: string, options?: LLMQueryOptions): Promise<string> => {
       if (disposed) {
         throw new Error("Sandbox has been disposed");
       }
@@ -169,8 +173,8 @@ export async function createSandbox(
         );
       }
 
-      // IMPORTANT: Only pass the prompt, never parent history
-      return llmQueryFn(prompt);
+      // IMPORTANT: Only pass the prompt and options, never parent history
+      return llmQueryFn(prompt, options);
     },
 
     // Safe built-ins
@@ -200,13 +204,130 @@ export async function createSandbox(
   // Create VM context
   const vmContext = vm.createContext(sandboxGlobals);
 
-  // Initialize the sandbox with fuzzy search and llm_query wrapper
+  // Initialize the sandbox with fuzzy search, native tools, and llm_query wrapper
   const initCode = `
     ${FUZZY_SEARCH_IMPL}
 
-    // Wrap llm_query to be async-friendly
-    async function llm_query(prompt) {
-      return await __llmQueryBridge(prompt);
+    // Wrap llm_query to be async-friendly, supports format option
+    // Usage: llm_query("prompt") or llm_query("prompt", { format: "json" })
+    async function llm_query(prompt, options) {
+      return await __llmQueryBridge(prompt, options);
+    }
+
+    /**
+     * batch_llm_query - Execute multiple LLM queries in parallel
+     * Much faster than sequential llm_query calls for processing multiple chunks
+     * @param {string[]} prompts - Array of prompts to execute
+     * @param {object} [options] - Optional settings: { format: 'json' | 'text' }
+     * @returns {Promise<string[]>} Array of responses in the same order as prompts
+     */
+    async function batch_llm_query(prompts, options) {
+      if (!prompts || prompts.length === 0) {
+        return [];
+      }
+
+      // Execute all prompts in parallel using Promise.all
+      const promises = prompts.map(prompt => __llmQueryBridge(prompt, options));
+      return await Promise.all(promises);
+    }
+
+    /**
+     * grep - Fast regex search returning matches with line numbers
+     * @param {string} pattern - Regex pattern to match
+     * @param {string} [flags='gm'] - Regex flags (g and m are included by default)
+     * @returns {Array<{match: string, lineNum: number, index: number, groups: string[]}>}
+     */
+    function grep(pattern, flags) {
+      // Default to global + multiline for line-based searching
+      let f = flags || '';
+      if (!f.includes('g')) f += 'g';
+      if (!f.includes('m')) f += 'm';
+      const regex = new RegExp(pattern, f);
+      const results = [];
+      let match;
+
+      while ((match = regex.exec(context)) !== null) {
+        // Calculate line number from character index
+        const beforeMatch = context.slice(0, match.index);
+        const lineNum = (beforeMatch.match(/\\n/g) || []).length + 1;
+
+        results.push({
+          match: match[0],
+          lineNum: lineNum,
+          index: match.index,
+          groups: match.slice(1) // Capture groups
+        });
+
+        // Prevent infinite loop on zero-width matches
+        if (match[0].length === 0) {
+          regex.lastIndex++;
+        }
+      }
+
+      return results;
+    }
+
+    /**
+     * count_tokens - Estimate token count for text
+     * Uses a simple heuristic based on word boundaries
+     * @param {string} [text] - Text to count (defaults to context)
+     * @returns {number} Estimated token count
+     */
+    function count_tokens(text) {
+      const str = text === undefined ? context : text;
+      if (!str || str.length === 0) return 0;
+
+      // Simple word-based estimation:
+      // - Most common words are 1 token
+      // - Very long words (>12 chars) might be 2 tokens
+      // - Punctuation and special chars add tokens
+      const words = str.split(/\\s+/).filter(w => w.length > 0);
+      let tokenCount = 0;
+
+      for (const word of words) {
+        // Count punctuation separately
+        const punctuation = (word.match(/[^a-zA-Z0-9]/g) || []).length;
+        const cleanWord = word.replace(/[^a-zA-Z0-9]/g, '');
+
+        if (cleanWord.length === 0) {
+          tokenCount += punctuation;
+        } else if (cleanWord.length <= 12) {
+          tokenCount += 1 + Math.floor(punctuation / 2);
+        } else {
+          // Long words get split into subwords
+          tokenCount += Math.ceil(cleanWord.length / 6) + Math.floor(punctuation / 2);
+        }
+      }
+
+      return tokenCount;
+    }
+
+    /**
+     * locate_line - Extract lines by line number (1-based)
+     * @param {number} start - Start line (1-based, negative counts from end)
+     * @param {number} [end] - End line (inclusive, defaults to start for single line)
+     * @returns {string} The extracted lines joined with newlines
+     */
+    function locate_line(start, end) {
+      const totalLines = __linesArray.length;
+
+      // Convert to 0-based index, handle negative
+      let startIdx = start < 0 ? totalLines + start : start - 1;
+      let endIdx = end === undefined ? startIdx : (end < 0 ? totalLines + end : end - 1);
+
+      // Bounds check
+      if (startIdx < 0 || startIdx >= totalLines) return '';
+      if (endIdx < 0) endIdx = 0;
+      if (endIdx >= totalLines) endIdx = totalLines - 1;
+
+      // Ensure start <= end
+      if (startIdx > endIdx) {
+        const tmp = startIdx;
+        startIdx = endIdx;
+        endIdx = tmp;
+      }
+
+      return __linesArray.slice(startIdx, endIdx + 1).join('\\n');
     }
   `;
 
@@ -332,4 +453,172 @@ export function createTextStats(context: string) {
       end: lines.slice(-5).join("\n"),
     },
   };
+}
+
+/**
+ * Document outline section
+ */
+export interface OutlineSection {
+  title: string;
+  level: number;
+  lineNum: number;
+}
+
+/**
+ * Pattern found in document
+ */
+export interface PatternMatch {
+  pattern: string;
+  count: number;
+  sampleLines: number[];
+}
+
+/**
+ * Document outline result
+ */
+export interface DocumentOutline {
+  format: "json" | "csv" | "markdown" | "log" | "text";
+  summary: {
+    totalLines: number;
+    totalChars: number;
+    estimatedTokens: number;
+  };
+  sections: OutlineSection[];
+  patterns: PatternMatch[];
+}
+
+/**
+ * Generate a document outline for "semantic peeking"
+ * This gives the LLM a map of the document before exploration
+ */
+export function generateDocumentOutline(context: string): DocumentOutline {
+  const lines = context.split("\n");
+  const sections: OutlineSection[] = [];
+  const patternCounts: Record<string, { count: number; lines: number[] }> = {};
+
+  // Detect format
+  let format: DocumentOutline["format"] = "text";
+
+  // Check for JSON
+  const trimmed = context.trim();
+  if (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  ) {
+    try {
+      JSON.parse(trimmed);
+      format = "json";
+    } catch {
+      // Not valid JSON
+    }
+  }
+
+  // Check for CSV (has commas and consistent column count)
+  if (format === "text" && lines.length >= 2) {
+    const firstLineCommas = (lines[0].match(/,/g) || []).length;
+    if (firstLineCommas >= 1) {
+      const secondLineCommas = (lines[1].match(/,/g) || []).length;
+      if (firstLineCommas === secondLineCommas && firstLineCommas >= 1) {
+        format = "csv";
+      }
+    }
+  }
+
+  // Scan for markdown headers and patterns
+  const logPatterns = ["INFO:", "ERROR:", "WARN:", "DEBUG:", "WARNING:"];
+  let hasLogPatterns = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+
+    // Detect markdown headers
+    const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headerMatch) {
+      sections.push({
+        title: headerMatch[2].trim(),
+        level: headerMatch[1].length,
+        lineNum,
+      });
+      if (format === "text") format = "markdown";
+    }
+
+    // Detect log patterns
+    for (const pattern of logPatterns) {
+      if (line.includes(pattern)) {
+        hasLogPatterns = true;
+        if (!patternCounts[pattern]) {
+          patternCounts[pattern] = { count: 0, lines: [] };
+        }
+        patternCounts[pattern].count++;
+        if (patternCounts[pattern].lines.length < 3) {
+          patternCounts[pattern].lines.push(lineNum);
+        }
+      }
+    }
+  }
+
+  if (hasLogPatterns && format === "text") {
+    format = "log";
+  }
+
+  // Convert pattern counts to array
+  const patterns: PatternMatch[] = Object.entries(patternCounts).map(
+    ([pattern, data]) => ({
+      pattern,
+      count: data.count,
+      sampleLines: data.lines,
+    })
+  );
+
+  // Estimate tokens (rough: ~4 chars per token)
+  const estimatedTokens = Math.ceil(context.length / 4);
+
+  return {
+    format,
+    summary: {
+      totalLines: lines.length,
+      totalChars: context.length,
+      estimatedTokens,
+    },
+    sections,
+    patterns,
+  };
+}
+
+/**
+ * Format document outline as a string for injection into system prompt
+ */
+export function formatOutlineForPrompt(outline: DocumentOutline): string {
+  const lines: string[] = [
+    "## Document Overview (Pre-computed)",
+    "",
+    `- **Format**: ${outline.format}`,
+    `- **Size**: ${outline.summary.totalLines.toLocaleString()} lines, ${outline.summary.totalChars.toLocaleString()} characters (~${outline.summary.estimatedTokens.toLocaleString()} tokens)`,
+  ];
+
+  if (outline.sections.length > 0) {
+    lines.push("");
+    lines.push("**Sections found:**");
+    for (const section of outline.sections.slice(0, 10)) {
+      // Limit to first 10
+      const indent = "  ".repeat(section.level - 1);
+      lines.push(`${indent}- Line ${section.lineNum}: "${section.title}"`);
+    }
+    if (outline.sections.length > 10) {
+      lines.push(`  ... and ${outline.sections.length - 10} more sections`);
+    }
+  }
+
+  if (outline.patterns.length > 0) {
+    lines.push("");
+    lines.push("**Patterns detected:**");
+    for (const pattern of outline.patterns) {
+      lines.push(
+        `- "${pattern.pattern}": ${pattern.count} occurrences (e.g., lines ${pattern.sampleLines.join(", ")})`
+      );
+    }
+  }
+
+  return lines.join("\n");
 }

@@ -17,6 +17,10 @@ export interface LLMOptions {
 
 export interface LLMConfig {
   provider: string;
+  /** For tiered mode: name of the large/orchestrator provider */
+  large?: string;
+  /** For tiered mode: name of the small/worker provider */
+  small?: string;
   model?: string;
   options?: LLMOptions;
 }

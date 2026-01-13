@@ -5,18 +5,25 @@ export function createOllamaProvider(config: ProviderConfig): LLMProvider {
     name: "ollama",
 
     async query(prompt: string, llmConfig: LLMConfig): Promise<string> {
+      const requestBody: Record<string, unknown> = {
+        model: llmConfig.model,
+        prompt,
+        stream: false,
+        options: {
+          temperature: llmConfig.options?.temperature ?? 0.2,
+          num_ctx: llmConfig.options?.num_ctx ?? 8192,
+        },
+      };
+
+      // Add JSON format if specified
+      if (llmConfig.options?.format === "json") {
+        requestBody.format = "json";
+      }
+
       const response = await fetch(`${config.baseUrl}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: llmConfig.model,
-          prompt,
-          stream: false,
-          options: {
-            temperature: llmConfig.options?.temperature ?? 0.2,
-            num_ctx: llmConfig.options?.num_ctx ?? 8192,
-          },
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {

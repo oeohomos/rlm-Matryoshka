@@ -11,7 +11,7 @@ describe("UTCP Tool Registration", () => {
   describe("createToolRegistry", () => {
     it("should create a registry with RLM tools", () => {
       const registry = createToolRegistry();
-      expect(registry.tools.length).toBe(5);
+      expect(registry.tools.length).toBe(9);
       expect(registry.name).toBe("rlm");
       expect(registry.version).toBe("1.0.0");
     });

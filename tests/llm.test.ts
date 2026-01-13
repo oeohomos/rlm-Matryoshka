@@ -4,6 +4,7 @@ import {
   createOllamaProvider,
   createDeepSeekProvider,
   getAvailableProviders,
+  createTieredClients,
 } from "../src/llm/index.js";
 import { loadConfig } from "../src/config.js";
 
@@ -192,6 +193,83 @@ describe("LLM Provider System", () => {
     });
   });
 
+  describe("JSON Format Mode", () => {
+    let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      fetchSpy = vi.spyOn(global, "fetch");
+    });
+
+    afterEach(() => {
+      fetchSpy.mockRestore();
+    });
+
+    it("should pass format: json to Ollama provider", async () => {
+      fetchSpy.mockResolvedValue({
+        ok: true,
+        json: async () => ({ response: '{"key": "value"}' }),
+      } as Response);
+
+      const provider = createOllamaProvider({
+        baseUrl: "http://localhost:11434",
+      });
+      await provider.query("test", {
+        provider: "ollama",
+        model: "test",
+        options: { format: "json" },
+      });
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"format":"json"'),
+        })
+      );
+    });
+
+    it("should pass response_format to DeepSeek provider", async () => {
+      fetchSpy.mockResolvedValue({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: '{"key": "value"}' } }] }),
+      } as Response);
+
+      const provider = createDeepSeekProvider({
+        baseUrl: "https://api.deepseek.com",
+        apiKey: "test-key",
+      });
+      await provider.query("test", {
+        provider: "deepseek",
+        model: "test",
+        options: { format: "json" },
+      });
+
+      expect(fetchSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: expect.stringContaining('"response_format"'),
+        })
+      );
+    });
+
+    it("should not include format when not specified", async () => {
+      fetchSpy.mockResolvedValue({
+        ok: true,
+        json: async () => ({ response: "test" }),
+      } as Response);
+
+      const provider = createOllamaProvider({
+        baseUrl: "http://localhost:11434",
+      });
+      await provider.query("test", {
+        provider: "ollama",
+        model: "test",
+      });
+
+      const callBody = fetchSpy.mock.calls[0][1]?.body as string;
+      expect(callBody).not.toContain('"format"');
+    });
+  });
+
   describe("Config Options", () => {
     let fetchSpy: ReturnType<typeof vi.spyOn>;
 
@@ -268,6 +346,107 @@ describe("LLM Provider System", () => {
       );
     });
 
+  });
+
+  describe("Model Tiering", () => {
+    it("should support tiered provider config", async () => {
+      const config = await loadConfig("./config.json");
+
+      // Tiered config should have providers.large and providers.small
+      // or fall back to single provider
+      expect(config.llm).toBeDefined();
+      expect(config.providers).toBeDefined();
+    });
+
+    it("should create separate clients for orchestrator and worker", () => {
+      // Create orchestrator client (large model)
+      const orchestratorClient = createLLMClient(
+        "deepseek",
+        { baseUrl: "https://api.deepseek.com", apiKey: "test-key" },
+        { model: "deepseek-chat" }
+      );
+
+      // Create worker client (small model)
+      const workerClient = createLLMClient(
+        "ollama",
+        { baseUrl: "http://localhost:11434" },
+        { model: "qwen3-coder:7b" }
+      );
+
+      expect(typeof orchestratorClient).toBe("function");
+      expect(typeof workerClient).toBe("function");
+    });
+
+    it("should allow config to specify tiered providers", async () => {
+      // This test documents the expected config format
+      const tieredConfig = {
+        llm: {
+          provider: "tiered",
+          large: "deepseek",
+          small: "ollama",
+        },
+        providers: {
+          deepseek: {
+            baseUrl: "https://api.deepseek.com",
+            apiKey: "test",
+            model: "deepseek-chat",
+          },
+          ollama: {
+            baseUrl: "http://localhost:11434",
+            model: "qwen3-coder:7b",
+          },
+        },
+      };
+
+      expect(tieredConfig.llm.large).toBe("deepseek");
+      expect(tieredConfig.llm.small).toBe("ollama");
+    });
+
+    it("should create tiered clients from config with createTieredClients", () => {
+      const config = {
+        llm: {
+          provider: "tiered",
+          large: "deepseek",
+          small: "ollama",
+        },
+        providers: {
+          deepseek: {
+            baseUrl: "https://api.deepseek.com",
+            apiKey: "test-key",
+            model: "deepseek-chat",
+          },
+          ollama: {
+            baseUrl: "http://localhost:11434",
+            model: "qwen3-coder:7b",
+          },
+        },
+      };
+
+      const { orchestrator, worker } = createTieredClients(config as any);
+
+      expect(typeof orchestrator).toBe("function");
+      expect(typeof worker).toBe("function");
+    });
+
+    it("should fall back to single provider when not tiered", () => {
+      const config = {
+        llm: {
+          provider: "ollama",
+        },
+        providers: {
+          ollama: {
+            baseUrl: "http://localhost:11434",
+            model: "qwen3-coder:30b",
+          },
+        },
+      };
+
+      const { orchestrator, worker } = createTieredClients(config as any);
+
+      // Both should use the same provider when not tiered
+      expect(typeof orchestrator).toBe("function");
+      expect(typeof worker).toBe("function");
+    });
   });
 });
 

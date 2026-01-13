@@ -2,6 +2,11 @@ export interface LLMOptions {
   temperature?: number;
   num_ctx?: number;
   max_tokens?: number;
+  format?: "json" | "text";
+}
+
+export interface LLMQueryOptions {
+  format?: "json" | "text";
 }
 
 export interface LLMConfig {
@@ -27,4 +32,4 @@ export interface LLMProvider {
   ): Promise<string>;
 }
 
-export type LLMQueryFn = (prompt: string) => Promise<string>;
+export type LLMQueryFn = (prompt: string, options?: LLMQueryOptions) => Promise<string>;

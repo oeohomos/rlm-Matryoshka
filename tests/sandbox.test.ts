@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createSandbox, Sandbox, createTextStats } from "../src/sandbox.js";
+import { createSandbox, Sandbox, createTextStats, generateDocumentOutline } from "../src/sandbox.js";
 
 describe("TypeScript Sandbox", () => {
   const testContext = `Line 1
@@ -187,6 +187,149 @@ Line 10`;
         results.length;
       `);
       expect(result.result).toBe(3);
+    });
+
+    it("should support format option for JSON mode", async () => {
+      const capturedCalls: Array<{ prompt: string; options?: { format?: string } }> = [];
+      const trackingLLM = async (prompt: string, options?: { format?: string }) => {
+        capturedCalls.push({ prompt, options });
+        return options?.format === "json" ? '{"key": "value"}' : "text response";
+      };
+
+      const sandboxWithTracking = await createSandbox(testContext, trackingLLM);
+
+      const result = await sandboxWithTracking.execute(`
+        await llm_query("get data", { format: "json" });
+      `);
+
+      sandboxWithTracking.dispose();
+
+      expect(capturedCalls[0].options?.format).toBe("json");
+      expect(result.result).toBe('{"key": "value"}');
+    });
+
+    it("should default to text format when no options provided", async () => {
+      const capturedCalls: Array<{ prompt: string; options?: { format?: string } }> = [];
+      const trackingLLM = async (prompt: string, options?: { format?: string }) => {
+        capturedCalls.push({ prompt, options });
+        return "text response";
+      };
+
+      const sandboxWithTracking = await createSandbox(testContext, trackingLLM);
+
+      await sandboxWithTracking.execute(`
+        await llm_query("get data");
+      `);
+
+      sandboxWithTracking.dispose();
+
+      expect(capturedCalls[0].options).toBeUndefined();
+    });
+  });
+
+  describe("batch_llm_query", () => {
+    it("should execute multiple queries in parallel", async () => {
+      const callOrder: string[] = [];
+      const parallelLLM = async (prompt: string) => {
+        callOrder.push(`start:${prompt}`);
+        // Simulate async work
+        await new Promise((r) => setTimeout(r, 10));
+        callOrder.push(`end:${prompt}`);
+        return `Response for: ${prompt}`;
+      };
+
+      const sandboxWithParallel = await createSandbox(testContext, parallelLLM);
+
+      const result = await sandboxWithParallel.execute(`
+        const results = await batch_llm_query(["query1", "query2", "query3"]);
+        results;
+      `);
+
+      sandboxWithParallel.dispose();
+
+      const results = result.result as string[];
+      expect(results).toHaveLength(3);
+      expect(results[0]).toBe("Response for: query1");
+      expect(results[1]).toBe("Response for: query2");
+      expect(results[2]).toBe("Response for: query3");
+    });
+
+    it("should return results in the same order as prompts", async () => {
+      const delays = [30, 10, 20]; // Different delays to test ordering
+      let callIndex = 0;
+
+      const variableDelayLLM = async (prompt: string) => {
+        const idx = callIndex++;
+        await new Promise((r) => setTimeout(r, delays[idx]));
+        return `Response ${idx}`;
+      };
+
+      const sandboxWithDelay = await createSandbox(testContext, variableDelayLLM);
+
+      const result = await sandboxWithDelay.execute(`
+        const results = await batch_llm_query(["first", "second", "third"]);
+        results;
+      `);
+
+      sandboxWithDelay.dispose();
+
+      const results = result.result as string[];
+      // Results should be in order of prompts, not completion order
+      expect(results[0]).toBe("Response 0");
+      expect(results[1]).toBe("Response 1");
+      expect(results[2]).toBe("Response 2");
+    });
+
+    it("should respect maxSubCalls limit across batch", async () => {
+      let callCount = 0;
+      const countingLLM = async () => {
+        callCount++;
+        return "ok";
+      };
+
+      const sandboxWithLimit = await createSandbox(testContext, countingLLM, {
+        maxSubCalls: 3,
+      });
+
+      const result = await sandboxWithLimit.execute(`
+        await batch_llm_query(["q1", "q2", "q3", "q4", "q5"]);
+      `);
+
+      sandboxWithLimit.dispose();
+
+      // Should error because 5 > 3 limit
+      expect(result.error).toMatch(/max.*calls|limit.*exceeded/i);
+    });
+
+    it("should handle empty array", async () => {
+      const result = await sandbox.execute(`
+        const results = await batch_llm_query([]);
+        results;
+      `);
+
+      expect(result.result).toEqual([]);
+    });
+
+    it("should support options in batch queries", async () => {
+      const capturedOptions: Array<{ format?: string } | undefined> = [];
+      const trackingLLM = async (prompt: string, options?: { format?: string }) => {
+        capturedOptions.push(options);
+        return options?.format === "json" ? '{"data": true}' : "text";
+      };
+
+      const sandboxWithTracking = await createSandbox(testContext, trackingLLM);
+
+      await sandboxWithTracking.execute(`
+        await batch_llm_query(
+          ["get json", "get more json"],
+          { format: "json" }
+        );
+      `);
+
+      sandboxWithTracking.dispose();
+
+      expect(capturedOptions[0]?.format).toBe("json");
+      expect(capturedOptions[1]?.format).toBe("json");
     });
   });
 
@@ -471,6 +614,110 @@ Line 10`;
       expect(result.result).toBe(2);
     });
   });
+
+  describe("grep (native regex search)", () => {
+    it("should find all regex matches with line numbers", async () => {
+      const result = await sandbox.execute('grep("Line \\\\d+")');
+      const matches = result.result as Array<{
+        match: string;
+        lineNum: number;
+        index: number;
+      }>;
+      expect(matches.length).toBe(10);
+      expect(matches[0].match).toBe("Line 1");
+      expect(matches[0].lineNum).toBe(1);
+    });
+
+    it("should support regex flags", async () => {
+      const result = await sandbox.execute('grep("line", "i")');
+      const matches = result.result as Array<{ match: string }>;
+      expect(matches.length).toBe(10); // Case insensitive
+    });
+
+    it("should return empty array for no matches", async () => {
+      const result = await sandbox.execute('grep("ZZZZZ")');
+      expect(result.result).toEqual([]);
+    });
+
+    it("should include character index in results", async () => {
+      const result = await sandbox.execute('grep("Line 1$")');
+      const matches = result.result as Array<{ index: number }>;
+      expect(matches.length).toBe(1);
+      expect(matches[0].index).toBe(0);
+    });
+
+    it("should handle capture groups", async () => {
+      const result = await sandbox.execute('grep("Line (\\\\d+)")');
+      const matches = result.result as Array<{
+        match: string;
+        groups: string[];
+      }>;
+      expect(matches[0].groups).toContain("1");
+    });
+  });
+
+  describe("count_tokens (token estimation)", () => {
+    it("should estimate token count for context by default", async () => {
+      const result = await sandbox.execute("count_tokens()");
+      const count = result.result as number;
+      // Rough estimate: ~4 chars per token
+      expect(count).toBeGreaterThan(10);
+      expect(count).toBeLessThan(100);
+    });
+
+    it("should estimate token count for provided text", async () => {
+      const result = await sandbox.execute('count_tokens("hello world")');
+      const count = result.result as number;
+      expect(count).toBe(2); // "hello" and "world" are ~2 tokens
+    });
+
+    it("should handle empty string", async () => {
+      const result = await sandbox.execute('count_tokens("")');
+      expect(result.result).toBe(0);
+    });
+
+    it("should provide reasonable estimates for code", async () => {
+      const result = await sandbox.execute(
+        'count_tokens("function foo() { return 42; }")'
+      );
+      const count = result.result as number;
+      // Code typically has more tokens per word
+      expect(count).toBeGreaterThan(5);
+      expect(count).toBeLessThan(20);
+    });
+  });
+
+  describe("locate_line (line-based extraction)", () => {
+    it("should extract a single line by number", async () => {
+      const result = await sandbox.execute("locate_line(5)");
+      expect(result.result).toBe("Line 5");
+    });
+
+    it("should extract a range of lines", async () => {
+      const result = await sandbox.execute("locate_line(1, 3)");
+      expect(result.result).toBe("Line 1\nLine 2\nLine 3");
+    });
+
+    it("should handle out of bounds gracefully", async () => {
+      const result = await sandbox.execute("locate_line(100)");
+      expect(result.result).toBe(""); // Or could be null
+    });
+
+    it("should handle negative indices from end", async () => {
+      const result = await sandbox.execute("locate_line(-1)");
+      expect(result.result).toBe("Line 10"); // Last line
+    });
+
+    it("should handle range with negative end", async () => {
+      const result = await sandbox.execute("locate_line(8, -1)");
+      expect(result.result).toBe("Line 8\nLine 9\nLine 10");
+    });
+
+    it("should use 1-based line numbers", async () => {
+      const result = await sandbox.execute("locate_line(1)");
+      expect(result.result).toBe("Line 1"); // First line is 1, not 0
+    });
+  });
 });
 
 describe("createTextStats", () => {
@@ -493,5 +740,78 @@ describe("createTextStats", () => {
     const stats = createTextStats("Single line document");
     expect(stats.lineCount).toBe(1);
     expect(stats.sample.start).toBe("Single line document");
+  });
+});
+
+describe("generateDocumentOutline", () => {
+  it("should detect markdown headers", () => {
+    const doc = `# Title
+Some intro text
+## Section 1
+Content here
+### Subsection 1.1
+More content
+## Section 2
+Final content`;
+
+    const outline = generateDocumentOutline(doc);
+
+    expect(outline.sections).toHaveLength(4);
+    expect(outline.sections[0].title).toBe("Title");
+    expect(outline.sections[0].level).toBe(1);
+    expect(outline.sections[1].title).toBe("Section 1");
+    expect(outline.sections[1].level).toBe(2);
+  });
+
+  it("should detect common patterns like DATE:, ERROR:, etc.", () => {
+    const doc = `2024-01-01 INFO: Starting
+2024-01-01 ERROR: Something failed
+2024-01-01 WARN: Low memory
+2024-01-02 INFO: Recovered`;
+
+    const outline = generateDocumentOutline(doc);
+
+    expect(outline.patterns).toBeDefined();
+    expect(outline.patterns.some(p => p.pattern.includes("ERROR"))).toBe(true);
+  });
+
+  it("should provide document summary", () => {
+    const doc = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10";
+
+    const outline = generateDocumentOutline(doc);
+
+    expect(outline.summary.totalLines).toBe(10);
+    expect(outline.summary.totalChars).toBe(doc.length);
+  });
+
+  it("should detect JSON/structured data", () => {
+    const doc = `{"users": [{"name": "John"}, {"name": "Jane"}]}`;
+
+    const outline = generateDocumentOutline(doc);
+
+    expect(outline.format).toBe("json");
+  });
+
+  it("should detect CSV format", () => {
+    const doc = `name,age,city
+John,30,NYC
+Jane,25,LA`;
+
+    const outline = generateDocumentOutline(doc);
+
+    expect(outline.format).toBe("csv");
+  });
+
+  it("should handle plain text documents", () => {
+    const doc = `This is a plain text document.
+It has multiple paragraphs.
+
+Each paragraph has some content.
+The document discusses various topics.`;
+
+    const outline = generateDocumentOutline(doc);
+
+    expect(outline.format).toBe("text");
+    expect(outline.summary.totalLines).toBeGreaterThan(0);
   });
 });
