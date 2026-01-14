@@ -281,6 +281,58 @@ The model:
 (parseFloat str)              ; Parse float
 ```
 
+### Type Coercion
+
+When the model sees data that needs parsing, it can use declarative type coercion:
+
+```scheme
+; Date parsing (returns ISO format YYYY-MM-DD)
+(parseDate "Jan 15, 2024")           ; -> "2024-01-15"
+(parseDate "01/15/2024" "US")        ; -> "2024-01-15" (MM/DD/YYYY)
+(parseDate "15/01/2024" "EU")        ; -> "2024-01-15" (DD/MM/YYYY)
+
+; Currency parsing (handles $, €, commas, etc.)
+(parseCurrency "$1,234.56")          ; -> 1234.56
+(parseCurrency "€1.234,56")          ; -> 1234.56 (EU format)
+
+; Number parsing
+(parseNumber "1,234,567")            ; -> 1234567
+(parseNumber "50%")                  ; -> 0.5
+
+; General coercion
+(coerce value "date")                ; Coerce to date
+(coerce value "currency")            ; Coerce to currency
+(coerce value "number")              ; Coerce to number
+
+; Extract and coerce in one step
+(extract str "\\$[\\d,]+" 0 "currency")  ; Extract and parse as currency
+```
+
+Use in map for batch transformations:
+
+```scheme
+; Parse all dates in results
+(map RESULTS (lambda x (parseDate (match x "[A-Za-z]+ \\d+, \\d+" 0))))
+
+; Extract and sum currencies
+(map RESULTS (lambda x (parseCurrency (match x "\\$[\\d,]+" 0))))
+```
+
+### Program Synthesis
+
+For complex transformations, the model can synthesize functions from examples:
+
+```scheme
+; Synthesize from input/output pairs
+(synthesize
+  ("$100" 100)
+  ("$1,234" 1234)
+  ("$50,000" 50000))
+; -> Returns a function that extracts numbers from currency strings
+```
+
+This uses Barliman-style relational synthesis with miniKanren to automatically build extraction functions.
+
 ### Cross-Turn State
 
 Results from previous turns are available:
