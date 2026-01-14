@@ -604,8 +604,76 @@ export async function runRLM(
 
   log(`[RLM] Sandbox created with synthesis tools (maxSubCalls: ${maxSubCalls}, timeout: ${turnTimeoutMs}ms)`);
 
+  // Pre-search: Extract keywords from query and run grep before calling LLM
+  const solverTools = createSolverTools(documentContent);
+  let preSearchResults: Array<{ match: string; line: string; lineNum: number }> = [];
+  let preSearchKeyword = "";
+
+  // Extract potential keywords from query
+  const queryWords = query.toLowerCase().split(/\s+/);
+  const significantWords = queryWords.filter(w =>
+    w.length > 3 &&
+    !["what", "which", "where", "when", "how", "many", "much", "total", "all", "the", "are", "is", "of", "for", "in", "to", "and", "or"].includes(w)
+  );
+
+  // Build compound search terms (e.g., "south" + "sales" -> "SALES.*SOUTH" or "SOUTH.*SALES")
+  const searchTerms: string[] = [];
+
+  // Try compound terms first (more specific)
+  if (significantWords.length >= 2) {
+    const [w1, w2] = significantWords;
+    searchTerms.push(`${w1.toUpperCase()}.*${w2.toUpperCase()}`);
+    searchTerms.push(`${w2.toUpperCase()}.*${w1.toUpperCase()}`);
+    searchTerms.push(`${w1.toUpperCase()}_${w2.toUpperCase()}`);
+    searchTerms.push(`${w2.toUpperCase()}_${w1.toUpperCase()}`);
+  }
+
+  // Then try individual uppercase versions
+  for (const word of significantWords) {
+    searchTerms.push(word.toUpperCase());
+  }
+
+  // Then try lowercase
+  for (const word of significantWords) {
+    searchTerms.push(word);
+  }
+
+  // Find the best search term (prefers specific matches with reasonable count)
+  for (const term of searchTerms) {
+    try {
+      const results = solverTools.grep(term);
+      // Prefer results that contain numbers (likely data lines)
+      const dataResults = results.filter(r => /\d/.test(r.line));
+
+      if (dataResults.length > 0 && dataResults.length <= 10) {
+        preSearchResults = dataResults;
+        preSearchKeyword = term;
+        log(`[Pre-search] Found ${dataResults.length} data matches for "${term}"`);
+        break;
+      } else if (results.length > 0 && results.length <= 10 && preSearchResults.length === 0) {
+        preSearchResults = results;
+        preSearchKeyword = term;
+      }
+    } catch {
+      // Invalid regex, skip
+    }
+  }
+
   // Build user message with optional constraints
   let userMessage = `Query: ${query}`;
+
+  // Include pre-search results if found
+  if (preSearchResults.length > 0) {
+    userMessage += `\n\nPre-search for "${preSearchKeyword}" found ${preSearchResults.length} matches:`;
+    const sampleResults = preSearchResults.slice(0, 10);
+    for (const r of sampleResults) {
+      userMessage += `\n  [line ${r.lineNum}] ${r.line.slice(0, 100)}`;
+    }
+    if (preSearchResults.length > 10) {
+      userMessage += `\n  ... and ${preSearchResults.length - 10} more`;
+    }
+    userMessage += `\n\nRESULTS is pre-populated with these matches. You can use (sum RESULTS), (count RESULTS), or (filter RESULTS ...) directly.`;
+  }
   if (constraint) {
     userMessage += `\n\n## OUTPUT CONSTRAINTS\n`;
     userMessage += `Your final answer MUST satisfy these constraints:\n`;
@@ -652,6 +720,14 @@ export async function runRLM(
   let previousResultCount = 0;
   // Bindings for cross-turn state - allows referencing previous results
   const solverBindings: Bindings = new Map();
+
+  // Pre-populate bindings with pre-search results
+  if (preSearchResults.length > 0) {
+    solverBindings.set("RESULTS", preSearchResults);
+    solverBindings.set("_0", preSearchResults);
+    lastResultCount = preSearchResults.length;
+    log(`[Pre-search] RESULTS pre-populated with ${preSearchResults.length} matches`);
+  }
 
   try {
     for (let turn = 1; turn <= maxTurns; turn++) {
