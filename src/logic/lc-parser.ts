@@ -406,6 +406,89 @@ function parseList(state: ParserState): LCTerm | null {
       return { tag: "parseFloat", str };
     }
 
+    case "parseDate": {
+      const str = parseTerm(state);
+      if (!str) return null;
+      // Optional format hint
+      const formatTerm = peek(state);
+      let format: string | undefined;
+      if (formatTerm && formatTerm.type === "string") {
+        consume(state);
+        format = formatTerm.value;
+      }
+      return { tag: "parseDate", str, format };
+    }
+
+    case "parseCurrency": {
+      const str = parseTerm(state);
+      if (!str) return null;
+      return { tag: "parseCurrency", str };
+    }
+
+    case "parseNumber": {
+      const str = parseTerm(state);
+      if (!str) return null;
+      return { tag: "parseNumber", str };
+    }
+
+    case "coerce":
+    case "as": {
+      const term = parseTerm(state);
+      if (!term) return null;
+      const typeTerm = parseTerm(state);
+      if (!typeTerm || typeTerm.tag !== "lit" || typeof typeTerm.value !== "string")
+        return null;
+      const targetType = typeTerm.value as import("./types.js").CoercionType;
+      return { tag: "coerce", term, targetType };
+    }
+
+    case "extract": {
+      const str = parseTerm(state);
+      if (!str) return null;
+      const pattern = parseTerm(state);
+      if (!pattern || pattern.tag !== "lit" || typeof pattern.value !== "string")
+        return null;
+      const group = parseTerm(state);
+      if (!group || group.tag !== "lit" || typeof group.value !== "number")
+        return null;
+      // Optional type hint
+      const typeTerm = peek(state);
+      let targetType: import("./types.js").CoercionType | undefined;
+      if (typeTerm && typeTerm.type === "string") {
+        consume(state);
+        targetType = typeTerm.value as import("./types.js").CoercionType;
+      }
+      return { tag: "extract", str, pattern: pattern.value, group: group.value, targetType };
+    }
+
+    case "synthesize": {
+      // Parse list of [input output] pairs
+      const examples: Array<{ input: string; output: string | number | boolean | null }> = [];
+      while (peek(state) && peek(state)?.type !== "rparen") {
+        // Expect (input output) pair or [input output]
+        const pairStart = peek(state);
+        if (pairStart?.type === "lparen" || pairStart?.type === "lbracket") {
+          consume(state); // ( or [
+          const input = parseTerm(state);
+          if (!input || input.tag !== "lit" || typeof input.value !== "string") break;
+          const output = parseTerm(state);
+          if (!output || output.tag !== "lit") break;
+          const pairEnd = consume(state); // ) or ]
+          if (!pairEnd || (pairEnd.type !== "rparen" && pairEnd.type !== "rbracket")) break;
+          examples.push({ input: input.value, output: output.value as string | number | boolean | null });
+        } else {
+          // Also support flat pairs: "input1" output1 "input2" output2
+          const input = parseTerm(state);
+          if (!input || input.tag !== "lit" || typeof input.value !== "string") break;
+          const output = parseTerm(state);
+          if (!output || output.tag !== "lit") break;
+          examples.push({ input: input.value, output: output.value as string | number | boolean | null });
+        }
+      }
+      if (examples.length < 2) return null;
+      return { tag: "synthesize", examples };
+    }
+
     case "if": {
       const cond = parseTerm(state);
       if (!cond) return null;

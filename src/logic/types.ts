@@ -31,6 +31,12 @@ export type LCTerm =
   | LCSplit
   | LCParseInt
   | LCParseFloat
+  | LCParseDate
+  | LCParseCurrency
+  | LCParseNumber
+  | LCCoerce
+  | LCExtract
+  | LCSynthesize
   | LCAdd
   | LCIf
   | LCClassify
@@ -179,6 +185,73 @@ export interface LCParseFloat {
 }
 
 /**
+ * (parseDate <term> [format]) - parse string as date
+ * Format hints: "ISO", "US", "EU", "auto" (default)
+ * Returns ISO date string (YYYY-MM-DD) or null
+ */
+export interface LCParseDate {
+  tag: "parseDate";
+  str: LCTerm;
+  format?: string;
+}
+
+/**
+ * (parseCurrency <term>) - parse currency string
+ * Handles: $1,234.56, €1.234,56, 1,234, etc.
+ * Returns number or null
+ */
+export interface LCParseCurrency {
+  tag: "parseCurrency";
+  str: LCTerm;
+}
+
+/**
+ * (parseNumber <term>) - parse number with various formats
+ * Handles: 1,234.56, 1.234,56 (EU), percentages, etc.
+ * Returns number or null
+ */
+export interface LCParseNumber {
+  tag: "parseNumber";
+  str: LCTerm;
+}
+
+/**
+ * Supported coercion types
+ */
+export type CoercionType = "date" | "currency" | "number" | "percent" | "boolean" | "string";
+
+/**
+ * (coerce <term> <type>) - coerce value to specified type
+ * General type coercion hint
+ */
+export interface LCCoerce {
+  tag: "coerce";
+  term: LCTerm;
+  targetType: CoercionType;
+}
+
+/**
+ * (extract <term> <pattern> [type]) - extract and optionally coerce
+ * Combines match + coerce in one operation
+ */
+export interface LCExtract {
+  tag: "extract";
+  str: LCTerm;
+  pattern: string;
+  group: number;
+  targetType?: CoercionType;
+}
+
+/**
+ * (synthesize <examples>) - synthesize function from input/output examples
+ * Barliman-style program synthesis using miniKanren
+ */
+export interface LCSynthesize {
+  tag: "synthesize";
+  examples: Array<{ input: string; output: string | number | boolean | null }>;
+}
+
+/**
  * (if <cond> <then> <else>) - conditional
  */
 export interface LCIf {
@@ -249,6 +322,7 @@ export type LCType =
   | { tag: "string" }
   | { tag: "number" }
   | { tag: "boolean" }
+  | { tag: "date" }
   | { tag: "array"; element: LCType }
   | { tag: "function"; param: LCType; result: LCType }
   | { tag: "any" }

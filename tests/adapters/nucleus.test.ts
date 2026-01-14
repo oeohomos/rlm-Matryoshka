@@ -37,8 +37,8 @@ describe("Nucleus Adapter", () => {
     });
 
     it("should be reasonably sized", () => {
-      // Prompt should be under 800 chars for efficiency
-      expect(prompt.length).toBeLessThan(800);
+      // Prompt should be under 1500 chars for efficiency (includes type coercion commands)
+      expect(prompt.length).toBeLessThan(1500);
     });
 
     it("should show final answer format", () => {

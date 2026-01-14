@@ -12,9 +12,10 @@
  * The LLM outputs LC intent, and this solver executes it.
  */
 
-import type { LCTerm } from "./types.js";
+import type { LCTerm, CoercionType } from "./types.js";
 import { resolveConstraints } from "./constraint-resolver.js";
 import { run, Rel, eq, conde, exist, failo, type Var, type Substitution } from "../minikanren/index.js";
+import { synthesizeExtractor, compileToFunction, prettyPrint, type Example } from "../synthesis/evalo/index.js";
 
 // Type for sandbox tools interface
 export interface SolverTools {
@@ -346,6 +347,82 @@ function evaluate(
       return parseFloat(String(str));
     }
 
+    case "parseDate": {
+      const str = evaluate(term.str, tools, bindings, log);
+      log(`[Lattice] Parsing date from: "${str}"`);
+      const parsed = parseDate(String(str), term.format);
+      log(`[Lattice] Parsed date: ${parsed}`);
+      return parsed;
+    }
+
+    case "parseCurrency": {
+      const str = evaluate(term.str, tools, bindings, log);
+      log(`[Lattice] Parsing currency from: "${str}"`);
+      const parsed = parseCurrency(String(str));
+      log(`[Lattice] Parsed currency: ${parsed}`);
+      return parsed;
+    }
+
+    case "parseNumber": {
+      const str = evaluate(term.str, tools, bindings, log);
+      log(`[Lattice] Parsing number from: "${str}"`);
+      const parsed = parseNumber(String(str));
+      log(`[Lattice] Parsed number: ${parsed}`);
+      return parsed;
+    }
+
+    case "coerce": {
+      const value = evaluate(term.term, tools, bindings, log);
+      log(`[Lattice] Coercing "${value}" to ${term.targetType}`);
+      const coerced = coerceValue(value, term.targetType);
+      log(`[Lattice] Coerced result: ${coerced}`);
+      return coerced;
+    }
+
+    case "extract": {
+      const str = evaluate(term.str, tools, bindings, log) as string;
+      if (typeof str !== "string") {
+        throw new Error(`extract: expected string, got ${typeof str}`);
+      }
+      const regex = new RegExp(term.pattern, "i");
+      const result = str.match(regex);
+      const extracted = result ? (result[term.group] ?? null) : null;
+
+      if (extracted !== null && term.targetType) {
+        log(`[Lattice] Extracting and coercing to ${term.targetType}`);
+        return coerceValue(extracted, term.targetType);
+      }
+      return extracted;
+    }
+
+    case "synthesize": {
+      log(`[Lattice] Synthesizing function from ${term.examples.length} examples`);
+      term.examples.slice(0, 3).forEach((ex, i) => {
+        log(`  [${i + 1}] "${ex.input}" -> ${JSON.stringify(ex.output)}`);
+      });
+
+      try {
+        const examples: Example[] = term.examples.map(e => ({
+          input: e.input,
+          output: e.output as string | number | boolean | null,
+        }));
+
+        const extractors = synthesizeExtractor(examples, 1);
+        if (extractors.length > 0) {
+          const extractor = extractors[0];
+          const fn = compileToFunction(extractor);
+          log(`[Lattice] Synthesized: ${prettyPrint(extractor)}`);
+          return fn;
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        log(`[Lattice] Synthesis failed: ${errMsg}`);
+      }
+
+      log(`[Lattice] Could not synthesize function from examples`);
+      return null;
+    }
+
     case "add": {
       const left = evaluate(term.left, tools, bindings, log) as number;
       const right = evaluate(term.right, tools, bindings, log) as number;
@@ -527,8 +604,43 @@ function evaluateWithBinding(
       return left + right;
     }
 
+    case "parseDate": {
+      const str = evaluateWithBinding(body.str, param, value, tools, bindings, log);
+      return parseDate(String(str), body.format);
+    }
+
+    case "parseCurrency": {
+      const str = evaluateWithBinding(body.str, param, value, tools, bindings, log);
+      return parseCurrency(String(str));
+    }
+
+    case "parseNumber": {
+      const str = evaluateWithBinding(body.str, param, value, tools, bindings, log);
+      return parseNumber(String(str));
+    }
+
+    case "coerce": {
+      const termValue = evaluateWithBinding(body.term, param, value, tools, bindings, log);
+      return coerceValue(termValue, body.targetType);
+    }
+
+    case "extract": {
+      const str = evaluateWithBinding(body.str, param, value, tools, bindings, log) as string;
+      if (typeof str !== "string") return null;
+      const regex = new RegExp(body.pattern, "i");
+      const result = str.match(regex);
+      const extracted = result ? (result[body.group] ?? null) : null;
+      if (extracted !== null && body.targetType) {
+        return coerceValue(extracted, body.targetType);
+      }
+      return extracted;
+    }
+
     default:
-      return evaluate(body, tools, bindings, log);
+      // For unhandled cases, create a temporary binding and evaluate
+      const newBindings = new Map(bindings);
+      newBindings.set(param, value);
+      return evaluate(body, tools, newBindings, log);
   }
 }
 
@@ -605,4 +717,232 @@ function extractCommonSubstrings(examples: string[]): string[] {
   }
 
   return substrings;
+}
+
+// ============================================================================
+// VALUE PARSING AND COERCION HELPERS
+// ============================================================================
+
+/**
+ * Parse a date string into ISO format (YYYY-MM-DD)
+ * Handles various formats: ISO, US (MM/DD/YYYY), EU (DD/MM/YYYY), natural language
+ */
+function parseDate(str: string, formatHint?: string): string | null {
+  if (!str || typeof str !== "string") return null;
+
+  const cleaned = str.trim();
+
+  // ISO format: 2024-01-15, 2024/01/15
+  const isoMatch = cleaned.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  // US format: MM/DD/YYYY, MM-DD-YYYY
+  if (formatHint === "US" || (!formatHint && cleaned.includes("/"))) {
+    const usMatch = cleaned.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+    if (usMatch) {
+      const [, month, day, year] = usMatch;
+      const m = parseInt(month, 10);
+      const d = parseInt(day, 10);
+      // Validate US format (month <= 12)
+      if (m <= 12 && d <= 31) {
+        return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      }
+    }
+  }
+
+  // EU format: DD/MM/YYYY, DD-MM-YYYY
+  if (formatHint === "EU") {
+    const euMatch = cleaned.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+    if (euMatch) {
+      const [, day, month, year] = euMatch;
+      return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    }
+  }
+
+  // Natural language: Jan 15, 2024 | January 15, 2024 | 15 Jan 2024
+  const months: Record<string, string> = {
+    jan: "01", january: "01",
+    feb: "02", february: "02",
+    mar: "03", march: "03",
+    apr: "04", april: "04",
+    may: "05",
+    jun: "06", june: "06",
+    jul: "07", july: "07",
+    aug: "08", august: "08",
+    sep: "09", september: "09",
+    oct: "10", october: "10",
+    nov: "11", november: "11",
+    dec: "12", december: "12",
+  };
+
+  // Month Day, Year
+  const mdy = cleaned.match(/^([a-zA-Z]+)\s+(\d{1,2}),?\s+(\d{4})/);
+  if (mdy) {
+    const monthNum = months[mdy[1].toLowerCase()];
+    if (monthNum) {
+      return `${mdy[3]}-${monthNum}-${mdy[2].padStart(2, "0")}`;
+    }
+  }
+
+  // Day Month Year
+  const dmy = cleaned.match(/^(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})/);
+  if (dmy) {
+    const monthNum = months[dmy[2].toLowerCase()];
+    if (monthNum) {
+      return `${dmy[3]}-${monthNum}-${dmy[1].padStart(2, "0")}`;
+    }
+  }
+
+  // Try JavaScript Date parsing as fallback
+  const jsDate = new Date(cleaned);
+  if (!isNaN(jsDate.getTime())) {
+    const year = jsDate.getFullYear();
+    const month = String(jsDate.getMonth() + 1).padStart(2, "0");
+    const day = String(jsDate.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  return null;
+}
+
+/**
+ * Parse a currency string into a number
+ * Handles: $1,234.56, €1.234,56, £1,234, ¥1234, etc.
+ */
+function parseCurrency(str: string): number | null {
+  if (!str || typeof str !== "string") return null;
+
+  let cleaned = str.trim();
+
+  // Handle negative: (1,234) or -1,234 or -$1,234
+  const isNegative = cleaned.startsWith("(") && cleaned.endsWith(")") ||
+                     cleaned.startsWith("-") ||
+                     /^-[\$€£¥₹₽₿]/.test(cleaned);
+
+  // Remove currency symbols, parentheses, minus signs, and whitespace
+  cleaned = cleaned.replace(/[\$€£¥₹₽₿\s\(\)\-]/g, "");
+
+  if (!cleaned) return null;
+
+  // Detect format by analyzing separator patterns
+  // US/UK: 1,234,567.89 (comma thousands, dot decimal)
+  // EU: 1.234.567,89 (dot thousands, comma decimal)
+
+  const commaCount = (cleaned.match(/,/g) || []).length;
+  const dotCount = (cleaned.match(/\./g) || []).length;
+  const lastComma = cleaned.lastIndexOf(",");
+  const lastDot = cleaned.lastIndexOf(".");
+
+  let normalized: string;
+
+  // If there's no decimal separator, just remove thousand separators
+  if (dotCount === 0 && commaCount === 0) {
+    normalized = cleaned;
+  }
+  // If only commas exist, they're thousand separators (US) unless it's like "1,23" (EU decimal)
+  else if (dotCount === 0) {
+    // Check if last comma has exactly 2 digits after it (EU decimal)
+    const afterLastComma = cleaned.slice(lastComma + 1);
+    if (afterLastComma.length <= 2 && commaCount === 1) {
+      // Likely EU decimal: "1234,56"
+      normalized = cleaned.replace(",", ".");
+    } else {
+      // US thousands: "1,234,567"
+      normalized = cleaned.replace(/,/g, "");
+    }
+  }
+  // If only dots exist, they're thousand separators (EU) unless it's a decimal
+  else if (commaCount === 0) {
+    // If there's only one dot, it's likely a decimal separator
+    if (dotCount === 1) {
+      // US decimal: "1234.56" or "3.14159"
+      normalized = cleaned;
+    } else {
+      // EU thousands: "1.234.567"
+      normalized = cleaned.replace(/\./g, "");
+    }
+  }
+  // Both exist - determine which is decimal
+  else if (lastComma > lastDot) {
+    // EU format: comma is decimal separator (1.234,56)
+    normalized = cleaned.replace(/\./g, "").replace(",", ".");
+  } else {
+    // US format: dot is decimal separator (1,234.56)
+    normalized = cleaned.replace(/,/g, "");
+  }
+
+  const value = parseFloat(normalized);
+  if (isNaN(value)) return null;
+
+  return isNegative ? -value : value;
+}
+
+/**
+ * Parse a number string with various formats
+ * Handles: 1,234.56, 1.234,56, 50%, 1e6, etc.
+ */
+function parseNumber(str: string): number | null {
+  if (!str || typeof str !== "string") return null;
+
+  const cleaned = str.trim();
+
+  // Handle percentage
+  if (cleaned.endsWith("%")) {
+    const num = parseNumber(cleaned.slice(0, -1));
+    return num !== null ? num / 100 : null;
+  }
+
+  // Handle scientific notation
+  if (/^-?\d+\.?\d*e[+-]?\d+$/i.test(cleaned)) {
+    return parseFloat(cleaned);
+  }
+
+  // Use currency parser logic for formatted numbers
+  return parseCurrency(cleaned);
+}
+
+/**
+ * Coerce a value to a specified type
+ */
+function coerceValue(value: unknown, targetType: CoercionType): unknown {
+  if (value === null || value === undefined) return null;
+
+  const str = String(value);
+
+  switch (targetType) {
+    case "date":
+      return parseDate(str);
+
+    case "currency":
+      return parseCurrency(str);
+
+    case "number":
+      return parseNumber(str);
+
+    case "percent": {
+      // If already has %, parse as percentage
+      if (str.includes("%")) {
+        return parseNumber(str);
+      }
+      // Otherwise treat as decimal that needs to be percentage
+      const num = parseNumber(str);
+      return num !== null ? num / 100 : null;
+    }
+
+    case "boolean": {
+      const lower = str.toLowerCase().trim();
+      if (["true", "yes", "1", "on"].includes(lower)) return true;
+      if (["false", "no", "0", "off", ""].includes(lower)) return false;
+      return Boolean(str);
+    }
+
+    case "string":
+      return str;
+
+    default:
+      return value;
+  }
 }

@@ -29,12 +29,24 @@ function buildSystemPrompt(
 COMMANDS:
 (grep "pattern")                                    - search document
 (filter RESULTS (lambda x (match x "pattern" 0)))   - filter results
-(sum RESULTS)                                       - auto-extracts and sums numbers from result lines
-(count RESULTS)                                     - count results
+(sum RESULTS)                                       - auto-extracts and sums numbers
+(count RESULTS)                                     - count items
 
-Note: (sum RESULTS) automatically extracts numbers like "$2,340,000" from each line.
+TYPE COERCION (use when you see specific data formats):
+(parseDate str)                                     - parse date -> "YYYY-MM-DD"
+(parseDate str "US")                                - parse MM/DD/YYYY format
+(parseCurrency str)                                 - parse "$1,234.56" -> 1234.56
+(parseNumber str)                                   - parse "1,234" or "50%" -> number
+(coerce term "date"|"currency"|"number")            - coerce to type
+(extract str "pattern" 0 "currency")                - extract and coerce
 
-Output final answer as: <<<FINAL>>>12345<<<END>>> (replace 12345 with actual value)
+SYNTHESIS (for complex transforms):
+(synthesize ("input1" output1) ("input2" output2))  - build function from examples
+
+Example synthesis: If you see "Jan 15, 2024" and need "2024-01-15":
+(map RESULTS (lambda x (parseDate x)))
+
+Output final answer as: <<<FINAL>>>answer<<<END>>>
 
 ${hints?.hintsText || ""}${hints?.selfCorrectionText || ""}`;
 }
