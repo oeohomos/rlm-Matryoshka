@@ -30,8 +30,8 @@ describe("Nucleus Adapter", () => {
       expect(prompt).toContain("map");
     });
 
-    it("should explain workflow", () => {
-      expect(prompt).toContain("WORKFLOW");
+    it("should explain commands", () => {
+      expect(prompt).toContain("COMMANDS");
       expect(prompt).toContain("grep");
       expect(prompt).toContain("sum");
     });
@@ -128,8 +128,9 @@ describe("Nucleus Adapter", () => {
     const feedback = adapter.getNoCodeFeedback();
 
     it("should show example S-expression", () => {
-      expect(feedback).toContain("sum");
+      expect(feedback).toContain("grep");
       expect(feedback).toContain("(");
+      expect(feedback).toContain("Next:");
     });
   });
 
@@ -147,15 +148,17 @@ describe("Nucleus Adapter", () => {
   });
 
   describe("getSuccessFeedback", () => {
-    it("should show count and next steps when results exist", () => {
+    it("should show count and next prompt when results exist", () => {
       const feedback = adapter.getSuccessFeedback(5);
       expect(feedback).toContain("5");
-      expect(feedback).toContain("FINAL");
+      expect(feedback).toContain("RESULTS");
+      expect(feedback).toContain("Next:");
     });
 
     it("should encourage different keyword when results empty", () => {
       const feedback = adapter.getSuccessFeedback(0);
       expect(feedback).toContain("different");
+      expect(feedback).toContain("Next:");
     });
 
     it("should warn when filter matched nothing", () => {

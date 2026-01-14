@@ -21,19 +21,24 @@ function buildSystemPrompt(
   toolInterfaces: string,
   hints?: RAGHints
 ): string {
-  return `You analyze documents. Output S-expressions or <<<FINAL>>>...<<<END>>>.
+  // Determine document size category
+  const sizeCategory = contextLength < 2000 ? "SMALL" : "LARGE";
+
+  return `You analyze documents. Output ONE thing per turn.
+
+For ${sizeCategory} documents (${contextLength} chars):
+${sizeCategory === "SMALL" ? "- Can answer directly: <<<FINAL>>>answer<<<END>>>" : "- Must search first: (grep \"keyword\")"}
 
 COMMANDS:
-(grep "word")                    - search
-(filter RESULTS (lambda x (match x "word" 0)))  - keep matches
-(map RESULTS (lambda x (match x "[0-9]+" 0)))   - extract
-(sum RESULTS)                    - add numbers
-(count RESULTS)                  - count items
+(grep "word")     - search document
+(filter RESULTS (lambda x (match x "pattern" 0))) - keep matches
+(map RESULTS (lambda x (match x "[0-9]+" 0)))     - extract numbers
+(sum RESULTS)     - add numbers
+(count RESULTS)   - count items
 
-WORKFLOW: grep → filter → map → sum → <<<FINAL>>>
+Final: <<<FINAL>>>answer<<<END>>>
 
-${hints?.hintsText || ""}${hints?.selfCorrectionText || ""}
-BEGIN:`;
+${hints?.hintsText || ""}${hints?.selfCorrectionText || ""}`;
 }
 
 /**
@@ -244,10 +249,12 @@ function extractFinalAnswer(
  * Feedback when no LC term found
  */
 function getNoCodeFeedback(): string {
-  return `Parse error. Need parentheses:
+  return `Parse error. Output one of:
+(grep "keyword")
 (sum RESULTS)
-or
-<<<FINAL>>>answer<<<END>>>`;
+<<<FINAL>>>answer<<<END>>>
+
+Next:`;
 }
 
 /**
@@ -272,18 +279,26 @@ function getErrorFeedback(error: string, code?: string): string {
  */
 function getSuccessFeedback(resultCount?: number, previousCount?: number): string {
   if (resultCount === 0 && previousCount && previousCount > 0) {
-    return `Filter matched nothing. Try simpler pattern or use _1 directly.`;
+    return `Filter matched nothing. Use _1 (original results) with simpler pattern.
+
+Next:`;
   }
 
   if (resultCount === 0) {
-    return `Empty. Try different keyword.`;
+    return `No matches. Try different keyword.
+
+Next:`;
   }
 
   if (resultCount && resultCount > 0) {
-    return `${resultCount} results. Next: filter, map, sum, or <<<FINAL>>>`;
+    return `${resultCount} results in RESULTS.
+
+Next:`;
   }
 
-  return `Done. Report with <<<FINAL>>>`;
+  return `Done.
+
+Next:`;
 }
 
 /**
@@ -291,10 +306,16 @@ function getSuccessFeedback(resultCount?: number, previousCount?: number): strin
  */
 function getRepeatedCodeFeedback(resultCount?: number): string {
   if (resultCount === 0) {
-    return `Repeated. Try different keyword.`;
+    return `Already tried. Use different keyword.
+
+Next:`;
   }
 
-  return `Already done. Use RESULTS or report <<<FINAL>>>`;
+  return `Already done. RESULTS has ${resultCount ?? "your"} data.
+
+Output: (sum RESULTS) or <<<FINAL>>>answer<<<END>>>
+
+Next:`;
 }
 
 /**
