@@ -6,7 +6,7 @@
  * writing regex patterns manually.
  */
 
-import type { ModelAdapter, FinalVarMarker } from "./types.js";
+import type { ModelAdapter, FinalVarMarker, RAGHints } from "./types.js";
 import { createQwenAdapter } from "./qwen.js";
 import { analyzeError, formatErrorFeedback } from "../feedback/error-analyzer.js";
 
@@ -15,7 +15,8 @@ import { analyzeError, formatErrorFeedback } from "../feedback/error-analyzer.js
  */
 function buildSystemPrompt(
   contextLength: number,
-  toolInterfaces: string
+  toolInterfaces: string,
+  hints?: RAGHints
 ): string {
   const formattedLength = contextLength.toLocaleString();
 
@@ -122,9 +123,9 @@ Your answer here.
 7. Each turn: run NEW code based on previous output. NEVER repeat the same code.
 8. Parse numbers: remove $ and commas before parseFloat().
 
+${hints?.hintsText || ""}${hints?.selfCorrectionText || ""}
 ## BEGIN
-Output ONLY JavaScript. Use grep() first, then synthesize patterns.
-`;
+Output ONLY JavaScript. Use grep() first, then synthesize patterns.`;
 }
 
 /**

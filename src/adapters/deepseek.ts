@@ -7,7 +7,7 @@
  * - May benefit from explicit role definition
  */
 
-import type { ModelAdapter, FinalVarMarker } from "./types.js";
+import type { ModelAdapter, FinalVarMarker, RAGHints } from "./types.js";
 import {
   baseExtractCode,
   baseExtractFinalAnswer,
@@ -19,7 +19,8 @@ import {
  */
 function buildSystemPrompt(
   contextLength: number,
-  toolInterfaces: string
+  toolInterfaces: string,
+  hints?: RAGHints
 ): string {
   const formattedLength = contextLength.toLocaleString();
 
@@ -62,10 +63,10 @@ Your answer with specific values from your code output
 Or to return structured data:
 FINAL_VAR(memory)
 
+${hints?.hintsText || ""}${hints?.selfCorrectionText || ""}
 # Task
 Analyze the document in \`context\` to answer the user's query.
-Write code to explore. No chat allowed.
-`;
+Write code to explore. No chat allowed.`;
 }
 
 /**

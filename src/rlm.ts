@@ -13,8 +13,11 @@ import { collectExamplesFromResult, extractGrepResults } from "./synthesis/examp
 import { createToolRegistry, getToolInterfaces } from "./tools.js";
 import { tryFixCode } from "./code-fixer.js";
 import type { LLMQueryFn } from "./llm/types.js";
-import type { ModelAdapter, FinalVarMarker } from "./adapters/types.js";
+import type { ModelAdapter, FinalVarMarker, RAGHints } from "./adapters/types.js";
 import { createBaseAdapter } from "./adapters/base.js";
+import type { SynthesisConstraint } from "./constraints/types.js";
+import { verifyResult } from "./constraints/verifier.js";
+import { getRAGManager, type RAGManager } from "./rag/manager.js";
 
 // Re-export types for backwards compatibility
 export type { FinalVarMarker } from "./adapters/types.js";
@@ -113,6 +116,12 @@ export interface RLMOptions {
   turnTimeoutMs?: number;
   maxSubCalls?: number;
   verbose?: boolean;
+  /** Output constraint for verification (Barliman-style constraint-first synthesis) */
+  constraint?: SynthesisConstraint;
+  /** Enable RAG for few-shot learning and self-correction (default: true) */
+  ragEnabled?: boolean;
+  /** Session ID for tracking failures (default: auto-generated) */
+  sessionId?: string;
 }
 
 /**
@@ -253,6 +262,63 @@ export function extractFinalAnswer(
 }
 
 /**
+ * Try to parse a numeric value from a string result
+ */
+function parseNumericResult(result: unknown): number | null {
+  if (typeof result === "number") return result;
+  if (typeof result === "string") {
+    // Handle strings like "Total: 13000000" or "13,000,000"
+    const match = result.match(/[\d,]+(?:\.\d+)?/);
+    if (match) {
+      const parsed = parseFloat(match[0].replace(/,/g, ""));
+      if (!isNaN(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+/**
+ * Verify a result against constraints, returning verification feedback if invalid
+ */
+function verifyAndReturnResult(
+  result: unknown,
+  constraint: SynthesisConstraint | undefined,
+  log: (msg: string) => void
+): { valid: true; result: unknown } | { valid: false; feedback: string } {
+  if (!constraint) {
+    return { valid: true, result };
+  }
+
+  // Try to coerce string results to the expected type
+  let resultToVerify = result;
+  if (constraint.output.type === "number" && typeof result === "string") {
+    const parsed = parseNumericResult(result);
+    if (parsed !== null) {
+      resultToVerify = parsed;
+    }
+  }
+
+  const verification = verifyResult(resultToVerify, constraint);
+
+  if (verification.valid) {
+    log(`[Verification] Result satisfies all constraints`);
+    return { valid: true, result: resultToVerify };
+  }
+
+  log(`[Verification] Result FAILED constraint verification:`);
+  for (const error of verification.errors) {
+    log(`  - ${error}`);
+  }
+
+  const feedback = `## CONSTRAINT VIOLATION\n\n` +
+    `Your result does not satisfy the required constraints:\n` +
+    verification.errors.map(e => `- ${e}`).join("\n") +
+    `\n\nPlease fix your approach and try again.`;
+
+  return { valid: false, feedback };
+}
+
+/**
  * Run the RLM execution loop
  */
 export async function runRLM(
@@ -267,11 +333,36 @@ export async function runRLM(
     turnTimeoutMs = 30000,
     maxSubCalls = 10,
     verbose = false,
+    constraint,
+    ragEnabled = true,
+    sessionId = `session-${Date.now()}`,
   } = options;
 
   const log = (msg: string) => {
     if (verbose) console.log(msg);
   };
+
+  // Initialize RAG manager for few-shot learning
+  let ragManager: RAGManager | null = null;
+  let ragHints: RAGHints | undefined;
+
+  if (ragEnabled) {
+    ragManager = getRAGManager();
+    const hints = ragManager.getHints(query, 2);
+    const hintsText = ragManager.formatHintsForPrompt(hints);
+    const selfCorrectionText = ragManager.generateSelfCorrectionFeedback(sessionId);
+
+    if (hintsText || selfCorrectionText) {
+      ragHints = {
+        hintsText,
+        selfCorrectionText: selfCorrectionText || undefined,
+      };
+      log(`[RAG] Retrieved ${hints.length} hints for query`);
+      if (selfCorrectionText) {
+        log(`[RAG] Including self-correction feedback from previous failures`);
+      }
+    }
+  }
 
   // Load document
   let documentContent: string;
@@ -284,10 +375,10 @@ export async function runRLM(
 
   log(`\n[RLM] Loaded document: ${documentContent.length.toLocaleString()} characters`);
 
-  // Build system prompt using the adapter
+  // Build system prompt using the adapter (with RAG hints if enabled)
   const registry = createToolRegistry();
   const toolInterfaces = getToolInterfaces(registry);
-  const systemPrompt = adapter.buildSystemPrompt(documentContent.length, toolInterfaces);
+  const systemPrompt = adapter.buildSystemPrompt(documentContent.length, toolInterfaces, ragHints);
 
   log(`[RLM] Using adapter: ${adapter.name}`);
   log(`[RLM] Adapter type: ${adapter.name.includes("barliman") ? "Barliman (constraint-based synthesis)" : "Standard"}`);
@@ -315,16 +406,42 @@ export async function runRLM(
 
   log(`[RLM] Sandbox created with synthesis tools (maxSubCalls: ${maxSubCalls}, timeout: ${turnTimeoutMs}ms)`);
 
+  // Build user message with optional constraints
+  let userMessage = `Query: ${query}`;
+  if (constraint) {
+    userMessage += `\n\n## OUTPUT CONSTRAINTS\n`;
+    userMessage += `Your final answer MUST satisfy these constraints:\n`;
+    userMessage += `- Type: ${constraint.output.type}\n`;
+    if (constraint.output.min !== undefined) {
+      userMessage += `- Minimum: ${constraint.output.min}\n`;
+    }
+    if (constraint.output.max !== undefined) {
+      userMessage += `- Maximum: ${constraint.output.max}\n`;
+    }
+    if (constraint.output.integer) {
+      userMessage += `- Must be an integer\n`;
+    }
+    if (constraint.invariants) {
+      for (const inv of constraint.invariants) {
+        userMessage += `- Invariant: ${inv}\n`;
+      }
+    }
+    userMessage += `\nBefore returning your answer, VERIFY it satisfies these constraints.`;
+    log(`[RLM] Output constraint: ${constraint.output.type}`);
+  }
+
   // Build conversation history
   const history: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: systemPrompt },
-    { role: "user", content: `Query: ${query}` },
+    { role: "user", content: userMessage },
   ];
 
   // Track whether code has been executed (to detect hallucination risk)
   let codeExecuted = false;
   // Track if the last execution had an error (don't accept answers after errors)
   let lastExecutionHadError = false;
+  // Track if last output was unhelpful (like [object Object])
+  let lastOutputWasUnhelpful = false;
   // Track repeated "done" patterns to detect stuck model
   let doneCount = 0;
   let lastMeaningfulOutput = "";
@@ -428,11 +545,31 @@ Try again with proper formatting.`;
           const logsText = result.logs.join("\n");
           feedback += `Logs:\n${truncate(logsText)}\n`;
 
+          // Detect [object Object] - model forgot to use JSON.stringify
+          const hasObjectObject = logsText.includes("[object Object]");
+          if (hasObjectObject) {
+            log(`[Turn ${turn}] Detected [object Object] - reminding to use JSON.stringify`);
+            feedback += `\n⚠️ WARNING: Your output shows [object Object] which means you logged an object without JSON.stringify().
+Use this pattern to see the actual data:
+\`\`\`javascript
+console.log(JSON.stringify(hits, null, 2));
+\`\`\`
+Or access properties directly:
+\`\`\`javascript
+for (const hit of hits) {
+  console.log(hit.line);  // Access the .line property
+}
+\`\`\`
+`;
+          }
+
           // Track meaningful output vs "done" / repeated patterns
           const isDoneOnly = result.logs.length === 1 && result.logs[0].toLowerCase().trim() === "done";
           const isRepeatedOutput = logsText === lastMeaningfulOutput;
+          const isUnhelpfulOutput = hasObjectObject || isDoneOnly;
 
-          if (isDoneOnly || isRepeatedOutput) {
+          if (isUnhelpfulOutput || isRepeatedOutput) {
+            lastOutputWasUnhelpful = true;
             doneCount++;
             if (doneCount >= 3 && lastMeaningfulOutput) {
               log(`[Turn ${turn}] Detected stuck pattern. Auto-terminating with last meaningful output.`);
@@ -445,7 +582,8 @@ Try again with proper formatting.`;
               feedback += `- Try different search terms related to the query\n`;
               feedback += `- Do NOT repeat the same code\n`;
             }
-          } else {
+          } else if (!hasObjectObject) {
+            lastOutputWasUnhelpful = false;
             // Save meaningful output - prefer computed results over raw data dumps
             // Look for patterns like "Total: X", "Result: X", "Answer: X", or assignments
             const computedMatch = logsText.match(/(?:total|sum|result|answer|count|average|mean)[^:]*:\s*([\d,.]+)/i);
@@ -460,9 +598,15 @@ Try again with proper formatting.`;
 
               if (answerLine) {
                 log(`[Turn ${turn}] Computed answer found: ${answerLine}`);
-                // Auto-return immediately - the model found the answer
-                log(`[Turn ${turn}] Auto-terminating with computed result`);
-                return answerLine;
+                // Verify constraints if specified
+                const verification = verifyAndReturnResult(answerLine, constraint, log);
+                if (verification.valid) {
+                  log(`[Turn ${turn}] Auto-terminating with computed result`);
+                  return verification.result;
+                } else {
+                  log(`[Turn ${turn}] Constraint violation - continuing`);
+                  feedback += `\n${verification.feedback}`;
+                }
               }
 
               // Fallback: save as meaningful output
@@ -480,6 +624,18 @@ Try again with proper formatting.`;
           log(`[Turn ${turn}] Error: ${result.error}`);
           feedback += `Error: ${result.error}\n`;
           lastExecutionHadError = true;
+
+          // Record failure for self-correction learning
+          if (ragManager) {
+            ragManager.recordFailure({
+              query,
+              code: codeToRun,
+              error: result.error,
+              timestamp: Date.now(),
+              sessionId,
+            });
+            log(`[RAG] Recorded failure for self-correction`);
+          }
         } else {
           lastExecutionHadError = false;
         }
@@ -502,22 +658,35 @@ Try again with proper formatting.`;
         history.push({ role: "user", content: feedback });
 
         // Check for final answer AFTER code execution (same response may have both)
-        // But only if there was no error - let model retry on errors
-        if (!result.error) {
+        // But only if there was no error and output was helpful
+        if (!result.error && !lastOutputWasUnhelpful) {
           const finalAnswer = adapter.extractFinalAnswer(response);
           if (finalAnswer !== null) {
             log(`[Turn ${turn}] Final answer found after code execution`);
+            let resultToReturn: unknown;
             if (typeof finalAnswer === "object" && finalAnswer.type === "var") {
               log(`[Turn ${turn}] Returning variable: ${finalAnswer.name}`);
               const mem = sandbox.getMemory();
               // If memory is empty but we have meaningful output, return that instead
               if (mem.length === 0 && lastMeaningfulOutput) {
                 log(`[Turn ${turn}] Memory empty, returning last meaningful output instead`);
-                return lastMeaningfulOutput;
+                resultToReturn = lastMeaningfulOutput;
+              } else {
+                resultToReturn = mem;
               }
-              return mem;
+            } else {
+              resultToReturn = finalAnswer;
             }
-            return finalAnswer;
+
+            // Verify constraints if specified
+            const verification = verifyAndReturnResult(resultToReturn, constraint, log);
+            if (verification.valid) {
+              return verification.result;
+            } else {
+              log(`[Turn ${turn}] Constraint violation - continuing`);
+              history.push({ role: "user", content: verification.feedback });
+              continue;
+            }
           }
         }
       } else {
@@ -529,6 +698,11 @@ Try again with proper formatting.`;
         // If model is stuck (3+ consecutive no-code responses) and we have meaningful output, return it
         if (noCodeCount >= 3 && lastMeaningfulOutput) {
           log(`[Turn ${turn}] Model stuck (${noCodeCount} consecutive no-code responses). Returning last meaningful output.`);
+          const verification = verifyAndReturnResult(lastMeaningfulOutput, constraint, log);
+          if (verification.valid) {
+            return verification.result;
+          }
+          // Continue even if verification fails - we need to break out of the stuck state
           return lastMeaningfulOutput;
         }
 
@@ -551,14 +725,23 @@ Try again with proper formatting.`;
           }
 
           log(`[Turn ${turn}] Final answer received`);
+          let resultToReturn: unknown;
           if (typeof finalAnswer === "object" && finalAnswer.type === "var") {
             log(`[Turn ${turn}] Returning variable: ${finalAnswer.name}`);
-            if (finalAnswer.name === "memory") {
-              return sandbox.getMemory();
-            }
-            return sandbox.getMemory();
+            resultToReturn = sandbox.getMemory();
+          } else {
+            resultToReturn = finalAnswer;
           }
-          return finalAnswer;
+
+          // Verify constraints if specified
+          const verification = verifyAndReturnResult(resultToReturn, constraint, log);
+          if (verification.valid) {
+            return verification.result;
+          } else {
+            log(`[Turn ${turn}] Constraint violation - continuing`);
+            history.push({ role: "user", content: verification.feedback });
+            continue;
+          }
         }
 
         // Add feedback to prompt the model to provide code
@@ -572,5 +755,11 @@ Try again with proper formatting.`;
   } finally {
     sandbox.dispose();
     log(`\n[RLM] Sandbox disposed`);
+
+    // Clear session-specific failure memory
+    if (ragManager) {
+      ragManager.clearFailureMemory(sessionId);
+      log(`[RAG] Cleared session failure memory`);
+    }
   }
 }

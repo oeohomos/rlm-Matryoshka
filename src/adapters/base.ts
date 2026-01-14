@@ -5,14 +5,15 @@
  * Other adapters can spread this and override specific methods.
  */
 
-import type { ModelAdapter, FinalVarMarker } from "./types.js";
+import type { ModelAdapter, FinalVarMarker, RAGHints } from "./types.js";
 
 /**
  * Build the default system prompt for the RLM
  */
 function buildSystemPrompt(
   contextLength: number,
-  toolInterfaces: string
+  toolInterfaces: string,
+  hints?: RAGHints
 ): string {
   const formattedLength = contextLength.toLocaleString();
 
@@ -66,10 +67,10 @@ Write your actual computed answer here with specific numbers from your code outp
 OR, to return the raw data structure you built:
 FINAL_VAR(memory)
 
+${hints?.hintsText || ""}${hints?.selfCorrectionText || ""}
 ## BEGIN SESSION
 Goal: Extract the requested information from \`context\`.
-Reminder: You are blind. Write code to see.
-`;
+Reminder: You are blind. Write code to see.`;
 }
 
 /**

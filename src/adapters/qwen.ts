@@ -7,7 +7,7 @@
  * - Benefit from explicit structure in prompts
  */
 
-import type { ModelAdapter, FinalVarMarker } from "./types.js";
+import type { ModelAdapter, FinalVarMarker, RAGHints } from "./types.js";
 import {
   baseExtractCode,
   baseExtractFinalAnswer,
@@ -21,7 +21,8 @@ import {
  */
 function buildSystemPrompt(
   contextLength: number,
-  toolInterfaces: string
+  toolInterfaces: string,
+  hints?: RAGHints
 ): string {
   const formattedLength = contextLength.toLocaleString();
 
@@ -75,9 +76,9 @@ The total is $X based on the values found.
 - Each turn: run NEW code based on previous output. NEVER repeat the same code.
 - Parse numbers: remove $ and commas before parseFloat().
 
+${hints?.hintsText || ""}${hints?.selfCorrectionText || ""}
 ## BEGIN
-Search for data related to the query. Use grep() first.
-`;
+Search for data related to the query. Use grep() first.`;
 }
 
 /**

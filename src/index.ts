@@ -11,6 +11,11 @@ import { runRLM } from "./rlm.js";
 import { loadConfig } from "./config.js";
 import { createLLMClient } from "./llm/index.js";
 import { resolveAdapter, getAvailableAdapters } from "./adapters/index.js";
+import {
+  parseSimpleType,
+  parseConstraintJSON,
+  type SynthesisConstraint,
+} from "./constraints/index.js";
 
 interface CLIOptions {
   query: string;
@@ -20,6 +25,8 @@ interface CLIOptions {
   model: string;
   provider: string;
   adapter: string;
+  outputType: string;
+  constraints: string;
   verbose: boolean;
   dryRun: boolean;
   config: string;
@@ -39,6 +46,8 @@ Options:
   --model <name>     Override the LLM model name
   --provider <name>  Override the LLM provider (ollama, deepseek, openai)
   --adapter <name>   Override the model adapter (qwen, deepseek, base)
+  --output-type <t>  Expected output type: number, string, boolean, array, object
+  --constraints <j>  Output constraints as JSON (e.g., '{"type":"number","min":0}')
   --config <path>    Path to config file (default: ./config.json)
   --verbose          Enable verbose output
   --dry-run          Show configuration without running
@@ -46,6 +55,8 @@ Options:
 
 Examples:
   rlm "Summarize this document" ./document.txt
+  rlm "Find total sales" ./data.txt --output-type number
+  rlm "Extract errors" ./logs.txt --constraints '{"type":"array","items":{"type":"string"}}'
   rlm "Find all mentions of 'whale'" ./moby-dick.txt --max-turns 15
   rlm "Count the words" ./file.txt --model llama3 --verbose
 `);
@@ -60,6 +71,8 @@ function parseArgs(args: string[]): CLIOptions {
     model: "",
     provider: "",
     adapter: "",
+    outputType: "",
+    constraints: "",
     verbose: false,
     dryRun: false,
     config: "./config.json",
@@ -83,6 +96,10 @@ function parseArgs(args: string[]): CLIOptions {
       options.provider = args[++i];
     } else if (arg === "--adapter") {
       options.adapter = args[++i];
+    } else if (arg === "--output-type") {
+      options.outputType = args[++i];
+    } else if (arg === "--constraints") {
+      options.constraints = args[++i];
     } else if (arg === "--config") {
       options.config = args[++i];
     } else if (arg === "--verbose") {
@@ -135,6 +152,8 @@ async function main(): Promise<void> {
     console.log(`Model: ${options.model || "(from config)"}`);
     console.log(`Provider: ${options.provider || "(from config)"}`);
     console.log(`Adapter: ${options.adapter || "(auto-detect)"}`);
+    console.log(`Output type: ${options.outputType || "(none)"}`);
+    console.log(`Constraints: ${options.constraints || "(none)"}`);
     console.log(`Available adapters: ${getAvailableAdapters().join(", ")}`);
     console.log(`Verbose: ${options.verbose}`);
     return;
@@ -171,6 +190,24 @@ async function main(): Promise<void> {
   const explicitAdapter = options.adapter || providerConfig.adapter;
   const adapter = resolveAdapter(effectiveModel, explicitAdapter);
 
+  // Parse output constraints
+  let constraint: SynthesisConstraint | undefined;
+  if (options.constraints) {
+    constraint = parseConstraintJSON(options.constraints) ?? undefined;
+    if (!constraint) {
+      console.error(`Error: Invalid constraints JSON: ${options.constraints}`);
+      process.exit(1);
+    }
+  } else if (options.outputType) {
+    const outputConstraint = parseSimpleType(options.outputType);
+    if (!outputConstraint) {
+      console.error(`Error: Invalid output type: ${options.outputType}`);
+      console.error("Valid types: number, string, boolean, array, object, null");
+      process.exit(1);
+    }
+    constraint = { output: outputConstraint };
+  }
+
   if (options.verbose) {
     console.log("Configuration:");
     console.log(`  Provider: ${providerName}`);
@@ -178,6 +215,9 @@ async function main(): Promise<void> {
     console.log(`  Adapter: ${adapter.name}${explicitAdapter ? "" : " (auto-detected)"}`);
     console.log(`  Max turns: ${options.maxTurns}`);
     console.log(`  Timeout: ${options.timeout}ms`);
+    if (constraint) {
+      console.log(`  Output constraint: ${JSON.stringify(constraint.output)}`);
+    }
     console.log("");
   }
 
@@ -199,6 +239,7 @@ async function main(): Promise<void> {
       turnTimeoutMs: options.timeout,
       maxSubCalls: config.sandbox.maxSubCalls,
       verbose: options.verbose,
+      constraint,
     });
 
     // Output result

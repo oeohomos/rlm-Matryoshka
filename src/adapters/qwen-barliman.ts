@@ -9,7 +9,7 @@
  * It can handle logs, financial data, scientific data, etc.
  */
 
-import type { ModelAdapter, FinalVarMarker } from "./types.js";
+import type { ModelAdapter, FinalVarMarker, RAGHints } from "./types.js";
 import { createQwenAdapter } from "./qwen.js";
 import { analyzeError, formatErrorFeedback } from "../feedback/error-analyzer.js";
 
@@ -18,7 +18,8 @@ import { analyzeError, formatErrorFeedback } from "../feedback/error-analyzer.js
  */
 function buildSystemPrompt(
   contextLength: number,
-  toolInterfaces: string
+  toolInterfaces: string,
+  hints?: RAGHints
 ): string {
   const formattedLength = contextLength.toLocaleString();
 
@@ -108,6 +109,7 @@ console.log("done");
 Your answer here.
 <<<END>>>
 
+${hints?.hintsText || ""}${hints?.selfCorrectionText || ""}
 ## BEGIN
 
 Search with grep(), look at the output, then provide constraints.

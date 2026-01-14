@@ -15,6 +15,16 @@ export interface FinalVarMarker {
 }
 
 /**
+ * RAG hints to inject into prompts for few-shot learning
+ */
+export interface RAGHints {
+  /** Formatted hints string to inject into system prompt */
+  hintsText: string;
+  /** Self-correction feedback from recent failures */
+  selfCorrectionText?: string;
+}
+
+/**
  * Model adapter interface - defines how to interact with a specific model
  */
 export interface ModelAdapter {
@@ -25,8 +35,9 @@ export interface ModelAdapter {
    * Build the system prompt for this model
    * @param contextLength - Length of the document in characters
    * @param toolInterfaces - TypeScript interface definitions for available tools
+   * @param hints - Optional RAG hints for few-shot learning
    */
-  buildSystemPrompt(contextLength: number, toolInterfaces: string): string;
+  buildSystemPrompt(contextLength: number, toolInterfaces: string, hints?: RAGHints): string;
 
   /**
    * Extract code from model response
