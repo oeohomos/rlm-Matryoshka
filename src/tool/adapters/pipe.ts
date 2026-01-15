@@ -62,14 +62,14 @@ export class PipeAdapter {
     const rl = readline.createInterface({
       input: this.input,
       output: this.interactive ? this.output : undefined,
-      prompt: this.interactive ? "nucleus> " : "",
+      prompt: this.interactive ? "lattice> " : "",
       terminal: this.interactive,
     });
 
     if (this.interactive) {
-      this.output.write("Nucleus Pipe Adapter (interactive mode)\n");
+      this.output.write("Lattice Pipe Adapter (interactive mode)\n");
       this.output.write("Commands: :load <file>, :bindings, :reset, :stats, :help, :quit\n");
-      this.output.write("Or enter Nucleus expressions: (grep \"pattern\")\n\n");
+      this.output.write("Or enter Nucleus queries: (grep \"pattern\")\n\n");
       rl.prompt();
     }
 
@@ -191,10 +191,10 @@ function main(): void {
 
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`
-Nucleus Pipe Adapter
+Lattice Pipe Adapter
 
 Usage:
-  nucleus-pipe [options]
+  lattice-pipe [options]
 
 Options:
   --interactive, -i   Use interactive text mode instead of JSON
@@ -226,10 +226,10 @@ Interactive Mode (-i):
 
 Examples:
   # JSON mode
-  echo '{"type":"loadContent","content":"line1\\nline2"}' | nucleus-pipe
+  echo '{"type":"loadContent","content":"line1\\nline2"}' | lattice-pipe
 
   # Interactive mode
-  nucleus-pipe -i
+  lattice-pipe -i
 `);
     process.exit(0);
   }
@@ -243,6 +243,6 @@ Examples:
 }
 
 // Run if executed directly
-if (process.argv[1]?.endsWith("pipe.ts") || process.argv[1]?.endsWith("pipe.js") || process.argv[1]?.endsWith("nucleus-pipe")) {
+if (process.argv[1]?.endsWith("pipe.ts") || process.argv[1]?.endsWith("pipe.js") || process.argv[1]?.endsWith("lattice-pipe")) {
   main();
 }

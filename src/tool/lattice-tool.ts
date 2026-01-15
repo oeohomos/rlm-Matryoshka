@@ -370,8 +370,3 @@ export function formatResponse(response: LatticeResponse): string {
 
   return parts.join("\n");
 }
-
-// Backwards compatibility aliases
-export type NucleusCommand = LatticeCommand;
-export type NucleusResponse = LatticeResponse;
-export const NucleusTool = LatticeTool;

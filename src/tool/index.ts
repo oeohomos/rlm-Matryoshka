@@ -18,10 +18,6 @@ export {
   formatResponse,
   type LatticeCommand,
   type LatticeResponse,
-  // Backwards compatibility
-  NucleusTool,
-  type NucleusCommand,
-  type NucleusResponse,
 } from "./lattice-tool.js";
 
 // Adapters

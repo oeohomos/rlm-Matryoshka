@@ -441,7 +441,7 @@ function main(): void {
 Lattice HTTP Server
 
 Usage:
-  nucleus-http [options]
+  lattice-http [options]
 
 Options:
   --port <n>      Port to listen on (default: 3456)
@@ -477,7 +477,7 @@ Endpoints:
 
 Examples:
   # Start server with 5-minute timeout
-  nucleus-http --port 8080 --timeout 300
+  lattice-http --port 8080 --timeout 300
 
   # Load a document
   curl -X POST http://localhost:8080/load \\
@@ -531,6 +531,6 @@ Examples:
 }
 
 // Run if executed directly
-if (process.argv[1]?.endsWith("http.ts") || process.argv[1]?.endsWith("http.js") || process.argv[1]?.endsWith("nucleus-http")) {
+if (process.argv[1]?.endsWith("http.ts") || process.argv[1]?.endsWith("http.js") || process.argv[1]?.endsWith("lattice-http")) {
   main();
 }

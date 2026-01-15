@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Nucleus REPL - Interactive command-line interface for document analysis
+ * Lattice REPL - Interactive command-line interface for document analysis
  *
- * Provides an interactive REPL for executing Nucleus commands against documents
+ * Provides an interactive REPL for executing Nucleus queries against documents
  * without requiring an LLM in the loop.
  *
  * Usage:
- *   nucleus-repl [file]           Start REPL, optionally loading a file
- *   nucleus-repl --help           Show help
+ *   lattice-repl [file]           Start REPL, optionally loading a file
+ *   lattice-repl --help           Show help
  */
 
 import * as readline from "node:readline";
@@ -92,7 +92,7 @@ function formatValue(value: unknown, maxLength: number = 2000): string {
  */
 function showHelp(output: NodeJS.WritableStream): void {
   output.write(`
-Nucleus REPL Commands
+Lattice REPL Commands
 =====================
 
 REPL COMMANDS (start with :)
@@ -101,11 +101,11 @@ REPL COMMANDS (start with :)
   :bindings         Show current variable bindings
   :get <var>        Show full value of a binding
   :reset            Clear all bindings
-  :ref              Show Nucleus command reference
+  :ref              Show Nucleus query reference
   :help             Show this help
   :quit, :q         Exit REPL
 
-NUCLEUS COMMANDS (S-expressions)
+NUCLEUS QUERIES (S-expressions)
   (grep "pattern")              Search for pattern
   (fuzzy_search "query" 10)     Fuzzy search
   (text_stats)                  Document stats
@@ -142,7 +142,7 @@ function showReference(output: NodeJS.WritableStream): void {
 }
 
 /**
- * Start the Nucleus REPL
+ * Start the Lattice REPL
  */
 export async function startREPL(options: REPLOptions = {}): Promise<void> {
   const {
@@ -156,7 +156,7 @@ export async function startREPL(options: REPLOptions = {}): Promise<void> {
   const engine = new NucleusEngine({ verbose });
 
   // Print banner
-  output.write(`Nucleus REPL v${VERSION}\n`);
+  output.write(`Lattice REPL v${VERSION}\n`);
   output.write(`Type :help for commands, :quit to exit\n\n`);
 
   // Load initial file if provided
@@ -293,7 +293,7 @@ export async function startREPL(options: REPLOptions = {}): Promise<void> {
       return true;
     }
 
-    // Nucleus command (S-expression)
+    // Nucleus query (S-expression)
     if (!engine.isLoaded()) {
       output.write("No document loaded. Use :load <file>\n");
       return true;
@@ -354,10 +354,10 @@ function main(): void {
 
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`
-Nucleus REPL - Interactive document analysis
+Lattice REPL - Interactive document analysis
 
 Usage:
-  nucleus-repl [file] [options]
+  lattice-repl [file] [options]
 
 Arguments:
   file              Document file to load (optional)
@@ -367,9 +367,9 @@ Options:
   --help, -h        Show this help
 
 Examples:
-  nucleus-repl                     Start empty REPL
-  nucleus-repl ./logs.txt          Start with document loaded
-  nucleus-repl ./data.txt -v       Start with verbose mode
+  lattice-repl                     Start empty REPL
+  lattice-repl ./logs.txt          Start with document loaded
+  lattice-repl ./data.txt -v       Start with verbose mode
 `);
     process.exit(0);
   }
@@ -384,6 +384,6 @@ Examples:
 }
 
 // Run if executed directly
-if (process.argv[1]?.endsWith("nucleus-repl.ts") || process.argv[1]?.endsWith("nucleus-repl.js") || process.argv[1]?.endsWith("nucleus-repl")) {
+if (process.argv[1]?.endsWith("lattice-repl.ts") || process.argv[1]?.endsWith("lattice-repl.js") || process.argv[1]?.endsWith("lattice-repl")) {
   main();
 }

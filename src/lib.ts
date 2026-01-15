@@ -21,7 +21,7 @@ export { startREPL, type REPLOptions } from "./repl/index.js";
 
 // Tool adapters
 export {
-  NucleusTool,
+  LatticeTool,
   parseCommand,
   formatResponse,
   ClaudeCodeAdapter,
@@ -31,8 +31,8 @@ export {
   startPipeAdapter,
   HttpAdapter,
   startHttpAdapter,
-  type NucleusCommand,
-  type NucleusResponse,
+  type LatticeCommand,
+  type LatticeResponse,
   type ClaudeCodeToolDefinition,
   type PipeAdapterOptions,
   type HttpAdapterOptions,

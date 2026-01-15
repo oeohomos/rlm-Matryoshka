@@ -9,7 +9,7 @@
     "rlm": "dist/index.js",
     "rlm-mcp": "dist/mcp-server.js",
     "lattice-mcp": "dist/lattice-mcp-server.js",
-    "lattice-repl": "dist/repl/nucleus-repl.js",
+    "lattice-repl": "dist/repl/lattice-repl.js",
     "lattice-pipe": "dist/tool/adapters/pipe.js",
     "lattice-http": "dist/tool/adapters/http.js",
     "lattice-setup": "dist/scripts/setup-claude-code.js"
@@ -55,7 +55,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "mcp": "tsx src/mcp-server.ts",
-    "repl": "tsx src/repl/nucleus-repl.ts",
+    "repl": "tsx src/repl/lattice-repl.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
