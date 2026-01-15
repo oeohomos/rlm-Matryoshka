@@ -100,15 +100,98 @@ Core operations:
 ```scheme
 ; Search
 (grep "pattern")              ; Regex search, returns matches with line numbers
+(fuzzy_search "query" 10)     ; Fuzzy search, top N matches by score
+(lines 10 20)                 ; Get lines in range (1-indexed)
 
 ; Collection operations
-(count RESULTS)               ; Count items in last result
+(count RESULTS)               ; Count items
+(sum RESULTS)                 ; Sum numeric values
 (filter RESULTS predicate)    ; Keep items matching predicate
 (map RESULTS transform)       ; Transform each item
+(reduce RESULTS init fn)      ; Generic reduce/fold
 
-; Access
-(lines 10 20)                 ; Get lines 10-20
+; Predicates & Lambdas
+(lambda x (match x "pat" 0))  ; Regex match predicate
+(classify "ex1" true "ex2" false)  ; Build classifier from examples
+
+; String operations
+(match str "pattern" group)   ; Extract regex group
+(replace str "from" "to")     ; Replace pattern
+(split str "delim" index)     ; Split and get part
+
+; Type coercion
+(parseInt str)                ; Parse to integer
+(parseFloat str)              ; Parse to float
+(parseCurrency str)           ; "$1,250.00" → 1250.00
+(parseDate str)               ; Parse date to ISO format
 ```
+
+## Beyond Simple Search: Complex Analysis
+
+The real power of Nucleus comes from chaining operations. Here's a log analysis example:
+
+```scheme
+; Load server logs
+(load "./server.log")
+
+; 1. Find all errors and extract the error types
+(grep "ERROR")
+(map RESULTS (lambda x (match x "(\\w+)$" 1)))
+; → ["db_timeout", "service_unavailable", "payment_failed"]
+
+; 2. Count requests per endpoint
+(grep "/api/users")
+(count RESULTS)  ; → 3
+
+(grep "/api/orders")
+(count RESULTS)  ; → 2
+
+; 3. Extract and analyze response times
+(grep "\\d+ms")
+(map RESULTS (lambda x (parseInt (match x "(\\d+)ms" 1))))
+; → [45, 1250, 23, 890, 156, 2100, 12, 950, 3500, 34]
+
+; 4. Parse currency values and sum them
+(grep "\\$[0-9,]+")
+(map RESULTS (lambda x (parseCurrency (match x "\\$([0-9,\\.]+)" 0))))
+; → [1250, 89.99, 2500]
+(sum RESULTS)  ; → 3839.99
+
+; 5. Filter using lambda predicates
+(grep "action=")
+(filter RESULTS (lambda x (match x "shipped" 0)))
+; → Only lines containing "shipped"
+```
+
+### Real-World Log Analysis
+
+Here's what a complete log analysis session looks like:
+
+```
+Input: 10 log lines from a web server
+
+Query                                    Result
+─────────────────────────────────────────────────────────────
+(grep "ERROR")                          → 3 errors found
+(map RESULTS (lambda x (match x         → ["db_timeout",
+  "(\\w+)$" 1)))                           "service_unavailable",
+                                           "payment_failed"]
+
+(grep " 200 ")                          → 6 successful requests
+(grep " 500 ")                          → 2 server errors
+(grep " 503 ")                          → 1 service unavailable
+
+(grep "web-1")                          → 4 requests to web-1
+(grep "web-2")                          → 3 requests to web-2
+(grep "web-3")                          → 3 requests to web-3
+
+(grep "\\d+ms")
+(map RESULTS (lambda x (parseInt        → [45, 1250, 23, 890,
+  (match x "(\\d+)ms" 1))))                156, 2100, 12, 950,
+                                           3500, 34]
+```
+
+This analysis required **~20 queries** but consumed only **~2000 tokens** total. Reading the full logs into context would have cost significantly more, and wouldn't have provided the structured extraction capabilities.
 
 ## Three Ways to Integrate
 
@@ -284,10 +367,42 @@ Or run as a server:
 npx nucleus-http --port 3456
 ```
 
+## The Power of Composability
+
+What makes Nucleus particularly powerful for LLM agents is **composability**. Instead of writing one complex query, you build up analysis step by step:
+
+```scheme
+; Step 1: Find all relevant lines
+(grep "transaction")
+
+; Step 2: Extract specific values
+(map RESULTS (lambda x (parseCurrency (match x "\\$([0-9,]+)" 0))))
+
+; Step 3: Aggregate
+(sum RESULTS)
+```
+
+Each step produces a result that feeds into the next. The LLM can inspect intermediate results, adjust the approach, and build understanding incrementally—exactly how a human analyst would work.
+
+This is fundamentally different from trying to write a single perfect query upfront. Exploration becomes cheap, and mistakes are easy to recover from.
+
+## Future Directions
+
+The current implementation covers the most common analysis patterns, but several enhancements could make Nucleus even more powerful:
+
+- **groupBy**: Group results by extracted key (e.g., group errors by service)
+- **sort**: Order results by extracted value
+- **distinct**: Get unique values from a field
+- **Statistical functions**: avg, median, percentile for numeric analysis
+- **Time-based filtering**: Filter by date ranges, aggregate by time buckets
+- **Join operations**: Combine results from multiple queries
+
+The S-expression foundation makes these extensions straightforward to add while maintaining the composable, incremental query model.
+
 ## Conclusion
 
 Nucleus demonstrates a simple but powerful principle: **don't pay for what you don't need**. By maintaining document state outside the LLM context and returning only relevant results, it achieves 80%+ token savings for document analysis tasks.
 
-More importantly, it enables a different way of working with documents—incremental, exploratory, building understanding query by query rather than trying to absorb everything at once.
+More importantly, it enables a different way of working with documents—incremental, exploratory, building understanding query by query rather than trying to absorb everything at once. The combination of search, transformation, and aggregation operations provides a complete toolkit for document analysis without ever loading the full document into the LLM's context.
 
 The tool is open source and available as part of the [Matryoshka RLM project](https://github.com/yogthos/Matryoshka).
