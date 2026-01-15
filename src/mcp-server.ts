@@ -21,6 +21,7 @@ import { loadConfig } from "./config.js";
 import { createLLMClient } from "./llm/index.js";
 import type { LLMQueryFn } from "./llm/types.js";
 import { NucleusEngine } from "./engine/nucleus-engine.js";
+import { getVersion } from "./version.js";
 
 export interface MCPTool {
   name: string;
@@ -310,9 +311,13 @@ export function createMCPServer(options: MCPServerOptions = {}): MCPServerInstan
 
 // Main entry point - run server when executed directly
 const isTestMode = process.argv.includes("--test");
+const showVersion = process.argv.includes("-v") || process.argv.includes("--version");
 
 if (process.argv[1]?.endsWith("mcp-server.ts") || process.argv[1]?.endsWith("mcp-server.js") || process.argv[1]?.endsWith("rlm-mcp")) {
-  if (isTestMode) {
+  if (showVersion) {
+    console.log(`rlm-mcp v${getVersion()}`);
+    process.exit(0);
+  } else if (isTestMode) {
     // Test mode - just confirm server can be created and exit
     const server = createMCPServer();
     console.log("MCP server ready");

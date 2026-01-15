@@ -25,6 +25,7 @@ import {
   type CallToolResult,
 } from "@modelcontextprotocol/sdk/types.js";
 import { NucleusEngine } from "./engine/nucleus-engine.js";
+import { getVersion } from "./version.js";
 
 // Configuration
 const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -391,6 +392,12 @@ process.on("SIGTERM", () => {
 });
 
 async function main() {
+  // Handle version flag
+  if (process.argv.includes("-v") || process.argv.includes("--version")) {
+    console.log(`lattice-mcp v${getVersion()}`);
+    process.exit(0);
+  }
+
   const server = new Server(
     {
       name: "lattice",

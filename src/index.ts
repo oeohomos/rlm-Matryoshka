@@ -16,6 +16,7 @@ import {
   parseConstraintJSON,
   type SynthesisConstraint,
 } from "./constraints/index.js";
+import { getVersion } from "./version.js";
 
 interface CLIOptions {
   query: string;
@@ -51,6 +52,7 @@ Options:
   --config <path>    Path to config file (default: ./config.json)
   --verbose          Enable verbose output
   --dry-run          Show configuration without running
+  -v, --version      Show version number
   --help             Show this help message
 
 Examples:
@@ -85,6 +87,9 @@ function parseArgs(args: string[]): CLIOptions {
 
     if (arg === "--help" || arg === "-h") {
       showHelp();
+      process.exit(0);
+    } else if (arg === "--version" || arg === "-v") {
+      console.log(`rlm v${getVersion()}`);
       process.exit(0);
     } else if (arg === "--max-turns") {
       options.maxTurns = parseInt(args[++i], 10);
