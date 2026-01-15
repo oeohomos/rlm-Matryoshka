@@ -456,7 +456,6 @@ describe("Config Loader", () => {
 
     expect(config.llm).toBeDefined();
     expect(config.providers).toBeDefined();
-    expect(config.sandbox).toBeDefined();
     expect(config.rlm).toBeDefined();
   });
 
@@ -469,8 +468,6 @@ describe("Config Loader", () => {
     expect(config.providers.ollama).toBeDefined();
     expect(config.providers.ollama.baseUrl).toBe("http://localhost:11434");
     expect(config.providers.ollama.model).toBe("qwen3-coder:30b");
-    expect(config.sandbox.maxSubCalls).toBe(10);
-    expect(config.sandbox.turnTimeoutMs).toBe(30000);
     expect(config.rlm.maxTurns).toBe(10);
   });
 
@@ -481,7 +478,6 @@ describe("Config Loader", () => {
     expect(config.llm).toBeDefined();
     expect(config.llm.provider).toBeDefined();
     expect(config.providers).toBeDefined();
-    expect(config.sandbox).toBeDefined();
     expect(config.rlm).toBeDefined();
   });
 

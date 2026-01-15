@@ -34,12 +34,6 @@ export interface ProviderConfig {
   options?: LLMOptions;
 }
 
-export interface SandboxConfig {
-  maxSubCalls: number;
-  turnTimeoutMs: number;
-  memoryLimitMb: number;
-}
-
 export interface RLMConfig {
   maxTurns: number;
 }
@@ -47,7 +41,6 @@ export interface RLMConfig {
 export interface Config {
   llm: LLMConfig;
   providers: Record<string, ProviderConfig>;
-  sandbox: SandboxConfig;
   rlm: RLMConfig;
 }
 
@@ -65,11 +58,6 @@ const DEFAULT_CONFIG: Config = {
       },
     },
   },
-  sandbox: {
-    maxSubCalls: 10,
-    turnTimeoutMs: 30000,
-    memoryLimitMb: 128,
-  },
   rlm: {
     maxTurns: 10,
   },
@@ -86,7 +74,6 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     return {
       llm: { ...DEFAULT_CONFIG.llm, ...userConfig.llm },
       providers: { ...DEFAULT_CONFIG.providers, ...userConfig.providers },
-      sandbox: { ...DEFAULT_CONFIG.sandbox, ...userConfig.sandbox },
       rlm: { ...DEFAULT_CONFIG.rlm, ...userConfig.rlm },
     };
   } catch (error) {

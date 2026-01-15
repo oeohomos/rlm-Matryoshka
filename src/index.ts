@@ -237,7 +237,6 @@ async function main(): Promise<void> {
       adapter,
       maxTurns: options.maxTurns,
       turnTimeoutMs: options.timeout,
-      maxSubCalls: config.sandbox.maxSubCalls,
       verbose: options.verbose,
       constraint,
     });

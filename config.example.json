@@ -1,0 +1,26 @@
+{
+  "llm": {
+    "provider": "ollama"
+  },
+  "providers": {
+    "ollama": {
+      "baseUrl": "http://localhost:11434",
+      "model": "qwen3-coder:30b",
+      "options": {
+        "temperature": 0.2,
+        "num_ctx": 8192
+      }
+    },
+    "deepseek": {
+      "baseUrl": "https://api.deepseek.com",
+      "apiKey": "${DEEPSEEK_API_KEY}",
+      "model": "deepseek-chat",
+      "options": {
+        "temperature": 0.2
+      }
+    }
+  },
+  "rlm": {
+    "maxTurns": 10
+  }
+}
