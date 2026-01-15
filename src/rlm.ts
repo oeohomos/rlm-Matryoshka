@@ -604,60 +604,13 @@ export async function runRLM(
 
   log(`[RLM] Sandbox created with synthesis tools (maxSubCalls: ${maxSubCalls}, timeout: ${turnTimeoutMs}ms)`);
 
-  // Pre-search: Extract keywords from query and run grep before calling LLM
+  // Create solver tools for document operations
   const solverTools = createSolverTools(documentContent);
-  let preSearchResults: Array<{ match: string; line: string; lineNum: number }> = [];
-  let preSearchKeyword = "";
 
-  // Extract potential keywords from query
-  const queryWords = query.toLowerCase().split(/\s+/);
-  const significantWords = queryWords.filter(w =>
-    w.length > 3 &&
-    !["what", "which", "where", "when", "how", "many", "much", "total", "all", "the", "are", "is", "of", "for", "in", "to", "and", "or"].includes(w)
-  );
-
-  // Build compound search terms (e.g., "south" + "sales" -> "SALES.*SOUTH" or "SOUTH.*SALES")
-  const searchTerms: string[] = [];
-
-  // Try compound terms first (more specific)
-  if (significantWords.length >= 2) {
-    const [w1, w2] = significantWords;
-    searchTerms.push(`${w1.toUpperCase()}.*${w2.toUpperCase()}`);
-    searchTerms.push(`${w2.toUpperCase()}.*${w1.toUpperCase()}`);
-    searchTerms.push(`${w1.toUpperCase()}_${w2.toUpperCase()}`);
-    searchTerms.push(`${w2.toUpperCase()}_${w1.toUpperCase()}`);
-  }
-
-  // Then try individual uppercase versions
-  for (const word of significantWords) {
-    searchTerms.push(word.toUpperCase());
-  }
-
-  // Then try lowercase
-  for (const word of significantWords) {
-    searchTerms.push(word);
-  }
-
-  // Find the best search term (prefers specific matches with reasonable count)
-  for (const term of searchTerms) {
-    try {
-      const results = solverTools.grep(term);
-      // Prefer results that contain numbers (likely data lines)
-      const dataResults = results.filter(r => /\d/.test(r.line));
-
-      if (dataResults.length > 0 && dataResults.length <= 10) {
-        preSearchResults = dataResults;
-        preSearchKeyword = term;
-        log(`[Pre-search] Found ${dataResults.length} data matches for "${term}"`);
-        break;
-      } else if (results.length > 0 && results.length <= 10 && preSearchResults.length === 0) {
-        preSearchResults = results;
-        preSearchKeyword = term;
-      }
-    } catch {
-      // Invalid regex, skip
-    }
-  }
+  // Pre-search disabled: Let the LLM make its own queries to get full context
+  // This ensures the LLM sees complete line data and can make informed filtering decisions
+  const preSearchResults: Array<{ match: string; line: string; lineNum: number }> = [];
+  const preSearchKeyword = "";
 
   // Build user message with optional constraints
   let userMessage = `Query: ${query}`;
@@ -747,6 +700,14 @@ export async function runRLM(
       // Extract and execute code FIRST (before checking final answer)
       // This ensures if response has both code and final marker, code runs first
       const code = adapter.extractCode(response);
+
+      // Log the LLM's raw response and extracted Nucleus grammar
+      log(`[Turn ${turn}] LLM response:`);
+      log(response.slice(0, 500));
+      if (code) {
+        log(`[Turn ${turn}] Extracted Nucleus: ${code}`);
+      }
+
       if (code) {
         // Check if the code block contains <<<FINAL>>> markers (model put answer inside code block)
         const finalInCode = code.match(/<<<FINAL>>>([\s\S]*?)<<<END>>>/);
@@ -1054,9 +1015,7 @@ Try again with proper formatting.`;
           }
         }
       } else {
-        log(`[Turn ${turn}] No code block found in response`);
-        log(`[Turn ${turn}] Raw response (first 500 chars):`);
-        log(response.slice(0, 500));
+        log(`[Turn ${turn}] No Nucleus command extracted`);
 
         noCodeCount++;
         // If model is stuck (3+ consecutive no-code responses) and we have meaningful output, return it

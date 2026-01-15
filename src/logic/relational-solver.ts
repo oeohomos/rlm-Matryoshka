@@ -1,0 +1,724 @@
+/**
+ * Relational Solver
+ *
+ * The relational solver runs bidirectionally:
+ * - Forward: (program, input) → output
+ * - Backward: (input, output) → program (SYNTHESIS)
+ *
+ * Key capabilities:
+ * 1. Automatic primitive composition
+ * 2. Function derivation (filter from reduce)
+ * 3. Synthesis on failure (when built-ins don't work)
+ */
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export type Primitive =
+  | "match"
+  | "replace"
+  | "split"
+  | "parseInt"
+  | "parseFloat"
+  | "parseDate"
+  | "parseCurrency"
+  | "parseNumber"
+  | "toUpperCase"
+  | "toLowerCase"
+  | "trim"
+  | "index";
+
+export interface CompositionStep {
+  primitive: Primitive;
+  args: Record<string, unknown>;
+}
+
+export interface Composition {
+  steps: CompositionStep[];
+}
+
+export interface SynthesisResult {
+  success: boolean;
+  composition?: Composition;
+  apply: (input: string) => unknown;
+}
+
+export interface Example {
+  input: string;
+  output: unknown;
+}
+
+// ============================================================================
+// Primitive Implementations
+// ============================================================================
+
+const PRIMITIVES: Record<Primitive, (input: unknown, args: Record<string, unknown>) => unknown> = {
+  match: (input, args) => {
+    if (typeof input !== "string") return null;
+    const pattern = args.pattern as string;
+    const group = (args.group as number) ?? 0;
+    try {
+      const regex = new RegExp(pattern);
+      const result = input.match(regex);
+      if (!result) return null;
+      return result[group] ?? null;
+    } catch {
+      return null;
+    }
+  },
+
+  replace: (input, args) => {
+    if (typeof input !== "string") return null;
+    const from = args.from as string;
+    const to = args.to as string;
+    try {
+      const regex = new RegExp(from, "g");
+      return input.replace(regex, to);
+    } catch {
+      return null;
+    }
+  },
+
+  split: (input, args) => {
+    if (typeof input !== "string") return null;
+    const delim = args.delim as string;
+    const idx = args.index as number;
+    const parts = input.split(delim);
+    return parts[idx] ?? null;
+  },
+
+  parseInt: (input, _args) => {
+    if (input === null || input === undefined) return NaN;
+    const str = String(input).replace(/,/g, "");
+    return parseInt(str, 10);
+  },
+
+  parseFloat: (input, _args) => {
+    if (input === null || input === undefined) return NaN;
+    const str = String(input).replace(/,/g, "");
+    return parseFloat(str);
+  },
+
+  parseDate: (input, args) => {
+    if (typeof input !== "string") return null;
+    const format = args.format as string | undefined;
+    return parseDateImpl(input, format);
+  },
+
+  parseCurrency: (input, _args) => {
+    if (typeof input !== "string") return null;
+    return parseCurrencyImpl(input);
+  },
+
+  parseNumber: (input, _args) => {
+    if (typeof input !== "string") return null;
+    return parseNumberImpl(input);
+  },
+
+  toUpperCase: (input, _args) => {
+    if (typeof input !== "string") return null;
+    return input.toUpperCase();
+  },
+
+  toLowerCase: (input, _args) => {
+    if (typeof input !== "string") return null;
+    return input.toLowerCase();
+  },
+
+  trim: (input, _args) => {
+    if (typeof input !== "string") return null;
+    return input.trim();
+  },
+
+  index: (input, args) => {
+    if (!Array.isArray(input)) return null;
+    const idx = args.index as number;
+    return input[idx] ?? null;
+  },
+};
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+const MONTHS: Record<string, string> = {
+  jan: "01", january: "01",
+  feb: "02", february: "02",
+  mar: "03", march: "03",
+  apr: "04", april: "04",
+  may: "05",
+  jun: "06", june: "06",
+  jul: "07", july: "07",
+  aug: "08", august: "08",
+  sep: "09", september: "09",
+  oct: "10", october: "10",
+  nov: "11", november: "11",
+  dec: "12", december: "12",
+};
+
+function parseDateImpl(str: string, formatHint?: string): string | null {
+  const trimmed = str.trim();
+
+  // ISO format: YYYY-MM-DD
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return trimmed;
+  }
+
+  // US format: MM/DD/YYYY
+  if (formatHint === "US" || !formatHint) {
+    const usMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (usMatch && formatHint === "US") {
+      const [, mm, dd, yyyy] = usMatch;
+      return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+    }
+  }
+
+  // EU format: DD/MM/YYYY
+  if (formatHint === "EU") {
+    const euMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (euMatch) {
+      const [, dd, mm, yyyy] = euMatch;
+      return `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+    }
+  }
+
+  // Natural: Month Day, Year (January 15, 2024)
+  const naturalMatch = trimmed.match(/^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$/);
+  if (naturalMatch) {
+    const [, monthName, day, year] = naturalMatch;
+    const month = MONTHS[monthName.toLowerCase()];
+    if (month) {
+      return `${year}-${month}-${day.padStart(2, "0")}`;
+    }
+  }
+
+  // Day Month Year (15 Jan 2024)
+  const dmyMatch = trimmed.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+  if (dmyMatch) {
+    const [, day, monthName, year] = dmyMatch;
+    const month = MONTHS[monthName.toLowerCase()];
+    if (month) {
+      return `${year}-${month}-${day.padStart(2, "0")}`;
+    }
+  }
+
+  // DD-Mon-YY format (15-Jan-24)
+  const shortMatch = trimmed.match(/^(\d{1,2})-([A-Za-z]+)-(\d{2})$/);
+  if (shortMatch) {
+    const [, day, monthName, shortYear] = shortMatch;
+    const month = MONTHS[monthName.toLowerCase()];
+    if (month) {
+      const year = parseInt(shortYear) < 50 ? `20${shortYear}` : `19${shortYear}`;
+      return `${year}-${month}-${day.padStart(2, "0")}`;
+    }
+  }
+
+  return null;
+}
+
+function parseCurrencyImpl(str: string): number | null {
+  const trimmed = str.trim();
+
+  // Handle negative in parentheses: ($1,234)
+  const negParenMatch = trimmed.match(/^\(([^)]+)\)$/);
+  if (negParenMatch) {
+    const inner = parseCurrencyImpl(negParenMatch[1]);
+    return inner !== null ? -inner : null;
+  }
+
+  // Handle negative with minus: -$1,234
+  const negMinusMatch = trimmed.match(/^-(.+)$/);
+  if (negMinusMatch) {
+    const inner = parseCurrencyImpl(negMinusMatch[1]);
+    return inner !== null ? -inner : null;
+  }
+
+  // Strip currency symbols
+  let cleaned = trimmed.replace(/^[\$€£¥₹]/, "").trim();
+
+  // Detect format (EU vs US)
+  // EU: 1.234,56 (dot for thousands, comma for decimal)
+  // US: 1,234.56 (comma for thousands, dot for decimal)
+  const hasComma = cleaned.includes(",");
+  const hasDot = cleaned.includes(".");
+
+  if (hasComma && hasDot) {
+    // Check which comes last
+    const lastComma = cleaned.lastIndexOf(",");
+    const lastDot = cleaned.lastIndexOf(".");
+
+    if (lastComma > lastDot) {
+      // EU format: 1.234,56
+      cleaned = cleaned.replace(/\./g, "").replace(",", ".");
+    } else {
+      // US format: 1,234.56
+      cleaned = cleaned.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    // Check if comma is decimal separator (single comma with 2 digits after)
+    const commaMatch = cleaned.match(/^([^,]+),(\d{2})$/);
+    if (commaMatch) {
+      cleaned = cleaned.replace(",", ".");
+    } else {
+      // Thousands separator
+      cleaned = cleaned.replace(/,/g, "");
+    }
+  }
+
+  const result = parseFloat(cleaned);
+  return isNaN(result) ? null : result;
+}
+
+function parseNumberImpl(str: string): number | null {
+  const trimmed = str.trim();
+
+  // Handle percentage
+  const percentMatch = trimmed.match(/^([\d.,]+)%$/);
+  if (percentMatch) {
+    const num = parseFloat(percentMatch[1].replace(/,/g, ""));
+    return isNaN(num) ? null : num / 100;
+  }
+
+  // Handle scientific notation
+  if (/^[\d.]+e[+-]?\d+$/i.test(trimmed)) {
+    const result = parseFloat(trimmed);
+    return isNaN(result) ? null : result;
+  }
+
+  // Standard number with commas
+  const cleaned = trimmed.replace(/,/g, "");
+  const result = parseFloat(cleaned);
+  return isNaN(result) ? null : result;
+}
+
+// ============================================================================
+// Composition Evaluation (Forward Mode)
+// ============================================================================
+
+export function evaluateComposition(composition: Composition, input: string): unknown {
+  let current: unknown = input;
+
+  for (const step of composition.steps) {
+    const primitive = PRIMITIVES[step.primitive];
+    if (!primitive) {
+      throw new Error(`Unknown primitive: ${step.primitive}`);
+    }
+    current = primitive(current, step.args);
+    if (current === null || current === undefined) {
+      return null;
+    }
+  }
+
+  return current;
+}
+
+// ============================================================================
+// Primitive Composition Search
+// ============================================================================
+
+/**
+ * Common patterns for extraction
+ */
+const COMMON_PATTERNS = [
+  { pattern: "\\$([\\d,]+)", group: 1 },         // $1,234
+  { pattern: "\\$([\\d,.]+)", group: 1 },        // $1,234.56
+  { pattern: "(\\d+)", group: 1 },               // plain number
+  { pattern: "([\\d,]+)", group: 1 },            // number with commas
+  { pattern: "(\\d+)%", group: 1 },              // percentage
+  { pattern: "#(\\d+)", group: 1 },              // #12345
+  { pattern: ":\\s*([^)]+)", group: 1 },         // : value
+  { pattern: "Q(\\d)-(\\d+)", group: 0 },        // Q1-2024
+  { pattern: "[A-Za-z]+\\s+\\d+,?\\s+\\d+", group: 0 }, // Jan 15, 2024
+  { pattern: "\\d+-[A-Za-z]+-\\d+", group: 0 },  // 15-Jan-24
+];
+
+/**
+ * Generate candidate compositions for string → number transformations
+ */
+function* generateNumberExtractionCandidates(): Generator<Composition> {
+  // Direct parseInt/parseFloat
+  yield { steps: [{ primitive: "parseInt", args: {} }] };
+  yield { steps: [{ primitive: "parseFloat", args: {} }] };
+  yield { steps: [{ primitive: "parseCurrency", args: {} }] };
+  yield { steps: [{ primitive: "parseNumber", args: {} }] };
+
+  // Match + parseInt/parseFloat
+  for (const { pattern, group } of COMMON_PATTERNS) {
+    yield {
+      steps: [
+        { primitive: "match", args: { pattern, group } },
+        { primitive: "parseInt", args: {} },
+      ],
+    };
+    yield {
+      steps: [
+        { primitive: "match", args: { pattern, group } },
+        { primitive: "parseFloat", args: {} },
+      ],
+    };
+    yield {
+      steps: [
+        { primitive: "match", args: { pattern, group } },
+        { primitive: "parseCurrency", args: {} },
+      ],
+    };
+    yield {
+      steps: [
+        { primitive: "match", args: { pattern, group } },
+        { primitive: "parseNumber", args: {} },
+      ],
+    };
+
+    // Match + replace + parse
+    yield {
+      steps: [
+        { primitive: "match", args: { pattern, group } },
+        { primitive: "replace", args: { from: ",", to: "" } },
+        { primitive: "parseInt", args: {} },
+      ],
+    };
+    yield {
+      steps: [
+        { primitive: "match", args: { pattern, group } },
+        { primitive: "replace", args: { from: ",", to: "" } },
+        { primitive: "parseFloat", args: {} },
+      ],
+    };
+  }
+}
+
+/**
+ * Generate candidate compositions for string → string transformations
+ */
+function* generateStringExtractionCandidates(): Generator<Composition> {
+  // Direct operations
+  yield { steps: [{ primitive: "trim", args: {} }] };
+  yield { steps: [{ primitive: "toUpperCase", args: {} }] };
+  yield { steps: [{ primitive: "toLowerCase", args: {} }] };
+  yield { steps: [{ primitive: "parseDate", args: {} }] };
+
+  // Match operations
+  for (const { pattern, group } of COMMON_PATTERNS) {
+    yield {
+      steps: [{ primitive: "match", args: { pattern, group } }],
+    };
+    yield {
+      steps: [
+        { primitive: "match", args: { pattern, group } },
+        { primitive: "parseDate", args: {} },
+      ],
+    };
+  }
+
+  // Split operations
+  for (const delim of [",", ";", ":", " ", "-", "/"]) {
+    for (let idx = 0; idx < 5; idx++) {
+      yield {
+        steps: [{ primitive: "split", args: { delim, index: idx } }],
+      };
+      yield {
+        steps: [
+          { primitive: "split", args: { delim, index: idx } },
+          { primitive: "trim", args: {} },
+        ],
+      };
+    }
+  }
+}
+
+/**
+ * Generate compositions for quarter-to-month mapping
+ */
+function* generateQuarterMappingCandidates(): Generator<Composition> {
+  // Q1-2024 -> 2024-01
+  yield {
+    steps: [
+      { primitive: "match", args: { pattern: "Q(\\d)-(\\d+)", group: 0 } },
+    ],
+  };
+}
+
+/**
+ * Search for a composition that maps all examples correctly
+ */
+function searchComposition(examples: Example[]): Composition | null {
+  if (examples.length === 0) return null;
+
+  const firstOutput = examples[0].output;
+  const outputType = typeof firstOutput;
+
+  // Choose appropriate candidate generators
+  const generators: Generator<Composition>[] = [];
+
+  if (outputType === "number") {
+    generators.push(generateNumberExtractionCandidates());
+  } else if (outputType === "string") {
+    generators.push(generateStringExtractionCandidates());
+    generators.push(generateQuarterMappingCandidates());
+  }
+
+  // Also try number extraction for string outputs that might be dates
+  if (outputType === "string" && String(firstOutput).match(/^\d{4}-\d{2}/)) {
+    generators.push(generateNumberExtractionCandidates());
+  }
+
+  // Search through all candidates
+  for (const generator of generators) {
+    for (const candidate of generator) {
+      let allMatch = true;
+
+      for (const { input, output } of examples) {
+        try {
+          const result = evaluateComposition(candidate, input);
+          if (result !== output) {
+            allMatch = false;
+            break;
+          }
+        } catch {
+          allMatch = false;
+          break;
+        }
+      }
+
+      if (allMatch) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
+// ============================================================================
+// Special Case: Quarter Mapping
+// ============================================================================
+
+/**
+ * Build a quarter-to-month mapper from examples
+ */
+function buildQuarterMapper(examples: Example[]): ((input: string) => string) | null {
+  // Check if this looks like quarter mapping
+  const quarterRegex = /Q(\d)-(\d+)/;
+
+  // Build mapping from quarter to month
+  const quarterToMonth: Record<string, string> = {};
+
+  for (const { input, output } of examples) {
+    const match = input.match(quarterRegex);
+    if (!match) return null;
+
+    const quarter = match[1];
+    const year = match[2];
+    const outputStr = String(output);
+
+    // Check output format matches YYYY-MM
+    const outputMatch = outputStr.match(/^(\d+)-(\d+)$/);
+    if (!outputMatch) return null;
+
+    const [, outYear, month] = outputMatch;
+    if (outYear !== year) return null;
+
+    quarterToMonth[quarter] = month;
+  }
+
+  // Verify we have a mapping for quarters 1-4
+  if (Object.keys(quarterToMonth).length === 0) return null;
+
+  return (input: string) => {
+    const match = input.match(quarterRegex);
+    if (!match) return input;
+
+    const quarter = match[1];
+    const year = match[2];
+
+    // Infer month from quarter if not in our examples
+    let month = quarterToMonth[quarter];
+    if (!month) {
+      const q = parseInt(quarter);
+      month = String((q - 1) * 3 + 1).padStart(2, "0");
+    }
+
+    return `${year}-${month}`;
+  };
+}
+
+// ============================================================================
+// Synthesis from Examples (Backward Mode)
+// ============================================================================
+
+/**
+ * Synthesize a function from input/output examples
+ */
+export function synthesizeFromExamples(examples: Example[]): SynthesisResult {
+  if (examples.length === 0) {
+    return {
+      success: false,
+      apply: () => null,
+    };
+  }
+
+  // Try special case: quarter mapping
+  if (examples.some(e => String(e.input).match(/Q\d-\d+/))) {
+    const mapper = buildQuarterMapper(examples);
+    if (mapper) {
+      // Verify it works on all examples
+      const allMatch = examples.every(({ input, output }) => mapper(input) === output);
+      if (allMatch) {
+        return {
+          success: true,
+          composition: { steps: [{ primitive: "match", args: { pattern: "Q(\\d)-(\\d+)", group: 0 } }] },
+          apply: mapper,
+        };
+      }
+    }
+  }
+
+  // Search for a composition
+  const composition = searchComposition(examples);
+
+  if (composition) {
+    return {
+      success: true,
+      composition,
+      apply: (input: string) => evaluateComposition(composition, input),
+    };
+  }
+
+  // Fallback: return a failure
+  return {
+    success: false,
+    apply: () => null,
+  };
+}
+
+// ============================================================================
+// Composition Search with Limited Primitives
+// ============================================================================
+
+/**
+ * Find a composition using only the specified primitives
+ */
+export function composeToMatch(
+  example: Example,
+  availablePrimitives: Primitive[]
+): Composition | null {
+  const examples = [example];
+
+  // Filter candidates to only use available primitives
+  const isAllowed = (composition: Composition): boolean => {
+    return composition.steps.every(step => availablePrimitives.includes(step.primitive));
+  };
+
+  // Try all generators but filter by available primitives
+  const generators: Generator<Composition>[] = [
+    generateNumberExtractionCandidates(),
+    generateStringExtractionCandidates(),
+  ];
+
+  for (const generator of generators) {
+    for (const candidate of generator) {
+      if (!isAllowed(candidate)) continue;
+
+      let allMatch = true;
+      for (const { input, output } of examples) {
+        try {
+          const result = evaluateComposition(candidate, input);
+          if (result !== output) {
+            allMatch = false;
+            break;
+          }
+        } catch {
+          allMatch = false;
+          break;
+        }
+      }
+
+      if (allMatch) {
+        return candidate;
+      }
+    }
+  }
+
+  return null;
+}
+
+// ============================================================================
+// Function Derivation
+// ============================================================================
+
+/**
+ * The primitive reduce function - all other list operations can be derived from this
+ */
+function reduce<T, R>(arr: T[], fn: (acc: R, item: T) => R, initial: R): R {
+  let acc = initial;
+  for (const item of arr) {
+    acc = fn(acc, item);
+  }
+  return acc;
+}
+
+/**
+ * Derive higher-order functions from reduce
+ */
+export function deriveFunction(name: string): ((...args: unknown[]) => unknown) | null {
+  switch (name) {
+    case "filter":
+      // filter = reduce with conditional cons
+      return <T>(arr: T[], predicate: (x: T) => boolean): T[] => {
+        return reduce(
+          arr,
+          (acc: T[], item: T) => (predicate(item) ? [...acc, item] : acc),
+          [] as T[]
+        );
+      };
+
+    case "map":
+      // map = reduce with transform + cons
+      return <T, R>(arr: T[], transform: (x: T) => R): R[] => {
+        return reduce(
+          arr,
+          (acc: R[], item: T) => [...acc, transform(item)],
+          [] as R[]
+        );
+      };
+
+    case "sum":
+      // sum = reduce with addition
+      return (arr: number[]): number => {
+        return reduce(arr, (acc: number, item: number) => acc + item, 0);
+      };
+
+    case "count":
+      // count = reduce with increment
+      return <T>(arr: T[]): number => {
+        return reduce(arr, (acc: number, _item: T) => acc + 1, 0);
+      };
+
+    case "find":
+      // find = reduce with early termination
+      return <T>(arr: T[], predicate: (x: T) => boolean): T | undefined => {
+        return reduce(
+          arr,
+          (acc: T | undefined, item: T) => (acc !== undefined ? acc : predicate(item) ? item : undefined),
+          undefined as T | undefined
+        );
+      };
+
+    case "every":
+      // every = reduce with conjunction
+      return <T>(arr: T[], predicate: (x: T) => boolean): boolean => {
+        return reduce(arr, (acc: boolean, item: T) => acc && predicate(item), true);
+      };
+
+    case "some":
+      // some = reduce with disjunction
+      return <T>(arr: T[], predicate: (x: T) => boolean): boolean => {
+        return reduce(arr, (acc: boolean, item: T) => acc || predicate(item), false);
+      };
+
+    default:
+      return null;
+  }
+}

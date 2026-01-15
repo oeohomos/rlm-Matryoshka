@@ -16,6 +16,7 @@ import type { LCTerm, CoercionType } from "./types.js";
 import { resolveConstraints } from "./constraint-resolver.js";
 import { run, Rel, eq, conde, exist, failo, type Var, type Substitution } from "../minikanren/index.js";
 import { synthesizeExtractor, compileToFunction, prettyPrint, type Example } from "../synthesis/evalo/index.js";
+import { synthesizeFromExamples, deriveFunction } from "./relational-solver.js";
 
 // Type for sandbox tools interface
 export interface SolverTools {
@@ -401,6 +402,7 @@ function evaluate(
         log(`  [${i + 1}] "${ex.input}" -> ${JSON.stringify(ex.output)}`);
       });
 
+      // Try evalo-based synthesis first
       try {
         const examples: Example[] = term.examples.map(e => ({
           input: e.input,
@@ -411,12 +413,28 @@ function evaluate(
         if (extractors.length > 0) {
           const extractor = extractors[0];
           const fn = compileToFunction(extractor);
-          log(`[Lattice] Synthesized: ${prettyPrint(extractor)}`);
+          log(`[Lattice] Synthesized (evalo): ${prettyPrint(extractor)}`);
           return fn;
         }
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        log(`[Lattice] Synthesis failed: ${errMsg}`);
+        log(`[Lattice] Evalo synthesis failed: ${errMsg}`);
+      }
+
+      // Fallback to relational solver for automatic composition
+      try {
+        const relExamples = term.examples.map(e => ({
+          input: e.input,
+          output: e.output,
+        }));
+        const result = synthesizeFromExamples(relExamples);
+        if (result.success) {
+          log(`[Lattice] Synthesized (relational): composition with ${result.composition?.steps.length || 0} steps`);
+          return result.apply;
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        log(`[Lattice] Relational synthesis failed: ${errMsg}`);
       }
 
       log(`[Lattice] Could not synthesize function from examples`);

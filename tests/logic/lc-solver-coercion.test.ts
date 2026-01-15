@@ -268,5 +268,32 @@ describe("LC Solver Synthesis", () => {
       const fn = result.value as (s: string) => unknown;
       expect(fn("$300")).toBe(300);
     });
+
+    it("should synthesize date parser via relational solver", () => {
+      // This tests the relational solver fallback - unusual date format
+      const result = solve(
+        parse('(synthesize ("Q1-2024" "2024-01") ("Q2-2024" "2024-04") ("Q3-2024" "2024-07") ("Q4-2024" "2024-10"))').term!,
+        tools,
+        bindings
+      );
+      expect(result.success).toBe(true);
+      expect(typeof result.value).toBe("function");
+
+      const fn = result.value as (s: string) => unknown;
+      expect(fn("Q1-2025")).toBe("2025-01");
+    });
+
+    it("should synthesize number extractor from complex pattern", () => {
+      const result = solve(
+        parse('(synthesize ("Order #12345 (SHIPPED)" 12345) ("Order #67890 (PENDING)" 67890))').term!,
+        tools,
+        bindings
+      );
+      expect(result.success).toBe(true);
+      expect(typeof result.value).toBe("function");
+
+      const fn = result.value as (s: string) => unknown;
+      expect(fn("Order #11111 (DELIVERED)")).toBe(11111);
+    });
   });
 });
