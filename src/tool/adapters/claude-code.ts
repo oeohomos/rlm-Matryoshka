@@ -1,26 +1,27 @@
 /**
  * Claude Code Tool Adapter
  *
- * Provides a stateful Nucleus tool that can be registered with Claude Code.
+ * Provides a stateful Lattice tool that can be registered with Claude Code.
+ * Uses Nucleus S-expression syntax for queries.
  * The tool maintains state across calls within the same session.
  *
  * Usage in Claude Code:
  *   1. Register the tool in your MCP config
- *   2. Claude can call nucleus_load to load a document
- *   3. Claude can call nucleus_query repeatedly to explore
+ *   2. Claude can call lattice_load to load a document
+ *   3. Claude can call lattice_query repeatedly to explore
  *
  * Example:
- *   > nucleus_load({ filePath: "./logs.txt" })
+ *   > lattice_load({ filePath: "./logs.txt" })
  *   Loaded logs.txt: 50,000 lines
  *
- *   > nucleus_query({ command: '(grep "ERROR")' })
+ *   > lattice_query({ command: '(grep "ERROR")' })
  *   Found 847 results (bound to RESULTS)
  *
- *   > nucleus_query({ command: '(count RESULTS)' })
+ *   > lattice_query({ command: '(count RESULTS)' })
  *   Result: 847
  */
 
-import { NucleusTool, type NucleusResponse } from "../nucleus-tool.js";
+import { LatticeTool, type LatticeResponse } from "../lattice-tool.js";
 
 /**
  * Tool definitions for Claude Code registration
@@ -39,10 +40,10 @@ export interface ClaudeCodeToolDefinition {
  * Stateful Claude Code adapter
  */
 export class ClaudeCodeAdapter {
-  private tool: NucleusTool;
+  private tool: LatticeTool;
 
   constructor() {
-    this.tool = new NucleusTool();
+    this.tool = new LatticeTool();
   }
 
   /**
@@ -51,7 +52,7 @@ export class ClaudeCodeAdapter {
   getToolDefinitions(): ClaudeCodeToolDefinition[] {
     return [
       {
-        name: "nucleus_load",
+        name: "lattice_load",
         description:
           "Load a document for analysis. Call this first before querying. " +
           "The document remains loaded for subsequent queries.",
@@ -67,24 +68,24 @@ export class ClaudeCodeAdapter {
         },
       },
       {
-        name: "nucleus_query",
+        name: "lattice_query",
         description:
-          "Execute a Nucleus command on the loaded document. " +
-          "Commands use S-expression syntax. Results are bound to RESULTS for chaining. " +
+          "Execute a Nucleus query on the loaded document. " +
+          "Queries use S-expression syntax. Results are bound to RESULTS for chaining. " +
           "Examples: (grep \"pattern\"), (filter RESULTS (lambda x (match x \"error\" 0))), (count RESULTS), (sum RESULTS)",
         inputSchema: {
           type: "object",
           properties: {
             command: {
               type: "string",
-              description: "Nucleus S-expression command to execute",
+              description: "Nucleus S-expression query to execute",
             },
           },
           required: ["command"],
         },
       },
       {
-        name: "nucleus_bindings",
+        name: "lattice_bindings",
         description:
           "Show current variable bindings (RESULTS, _1, _2, etc). " +
           "Use this to see what data is available from previous queries.",
@@ -95,7 +96,7 @@ export class ClaudeCodeAdapter {
         },
       },
       {
-        name: "nucleus_reset",
+        name: "lattice_reset",
         description:
           "Reset all bindings and state. Use this to start fresh without reloading the document.",
         inputSchema: {
@@ -105,7 +106,7 @@ export class ClaudeCodeAdapter {
         },
       },
       {
-        name: "nucleus_stats",
+        name: "lattice_stats",
         description: "Get statistics about the currently loaded document.",
         inputSchema: {
           type: "object",
@@ -114,8 +115,8 @@ export class ClaudeCodeAdapter {
         },
       },
       {
-        name: "nucleus_help",
-        description: "Get reference documentation for Nucleus commands.",
+        name: "lattice_help",
+        description: "Get reference documentation for Nucleus query syntax.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -132,36 +133,36 @@ export class ClaudeCodeAdapter {
     name: string,
     args: Record<string, unknown>
   ): Promise<{ content: Array<{ type: "text"; text: string }> }> {
-    let response: NucleusResponse;
+    let response: LatticeResponse;
 
     switch (name) {
-      case "nucleus_load":
+      case "lattice_load":
         response = await this.tool.executeAsync({
           type: "load",
           filePath: args.filePath as string,
         });
         break;
 
-      case "nucleus_query":
+      case "lattice_query":
         response = this.tool.execute({
           type: "query",
           command: args.command as string,
         });
         break;
 
-      case "nucleus_bindings":
+      case "lattice_bindings":
         response = this.tool.execute({ type: "bindings" });
         break;
 
-      case "nucleus_reset":
+      case "lattice_reset":
         response = this.tool.execute({ type: "reset" });
         break;
 
-      case "nucleus_stats":
+      case "lattice_stats":
         response = this.tool.execute({ type: "stats" });
         break;
 
-      case "nucleus_help":
+      case "lattice_help":
         response = this.tool.execute({ type: "help" });
         break;
 
@@ -177,7 +178,7 @@ export class ClaudeCodeAdapter {
   /**
    * Format response for Claude
    */
-  private formatResponse(response: NucleusResponse): string {
+  private formatResponse(response: LatticeResponse): string {
     if (!response.success) {
       return `Error: ${response.error}`;
     }
@@ -224,7 +225,7 @@ export class ClaudeCodeAdapter {
   /**
    * Get the underlying tool (for testing)
    */
-  getTool(): NucleusTool {
+  getTool(): LatticeTool {
     return this.tool;
   }
 }

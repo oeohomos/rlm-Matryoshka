@@ -1,33 +1,33 @@
 #!/usr/bin/env node
 /**
- * Pipe-based Nucleus Adapter
+ * Pipe-based Lattice Adapter
  *
  * Runs as a subprocess that reads JSON commands from stdin and writes
- * JSON responses to stdout. This allows any process to control Nucleus
- * programmatically.
+ * JSON responses to stdout. This allows any process to control Lattice
+ * programmatically. Uses Nucleus S-expression syntax for queries.
  *
  * Protocol:
- *   - Input: JSON-encoded NucleusCommand per line
- *   - Output: JSON-encoded NucleusResponse per line
+ *   - Input: JSON-encoded LatticeCommand per line
+ *   - Output: JSON-encoded LatticeResponse per line
  *
  * Usage:
- *   echo '{"type":"loadContent","content":"test data"}' | nucleus-pipe
- *   echo '{"type":"query","command":"(grep \"test\")"}' | nucleus-pipe
+ *   echo '{"type":"loadContent","content":"test data"}' | lattice-pipe
+ *   echo '{"type":"query","command":"(grep \"test\")"}' | lattice-pipe
  *
  * Or for interactive use:
- *   nucleus-pipe --interactive
+ *   lattice-pipe --interactive
  *   > :load ./file.txt
  *   > (grep "pattern")
  */
 
 import * as readline from "node:readline";
 import {
-  NucleusTool,
+  LatticeTool,
   parseCommand,
   formatResponse,
-  type NucleusCommand,
-  type NucleusResponse,
-} from "../nucleus-tool.js";
+  type LatticeCommand,
+  type LatticeResponse,
+} from "../lattice-tool.js";
 
 export interface PipeAdapterOptions {
   /** Use interactive text mode instead of JSON */
@@ -44,12 +44,12 @@ export interface PipeAdapterOptions {
  * Pipe-based adapter for subprocess control
  */
 export class PipeAdapter {
-  private tool: NucleusTool;
+  private tool: LatticeTool;
   private interactive: boolean;
   private input: NodeJS.ReadableStream;
   private output: NodeJS.WritableStream;
   constructor(options: PipeAdapterOptions = {}) {
-    this.tool = new NucleusTool();
+    this.tool = new LatticeTool();
     this.interactive = options.interactive ?? false;
     this.input = options.input ?? process.stdin;
     this.output = options.output ?? process.stdout;
@@ -88,7 +88,7 @@ export class PipeAdapter {
         return;
       }
 
-      let response: NucleusResponse;
+      let response: LatticeResponse;
 
       if (this.interactive) {
         // Interactive text mode
@@ -110,7 +110,7 @@ export class PipeAdapter {
   /**
    * Handle interactive text command
    */
-  private async handleInteractive(input: string): Promise<NucleusResponse> {
+  private async handleInteractive(input: string): Promise<LatticeResponse> {
     const command = parseCommand(input);
 
     if (!command) {
@@ -130,11 +130,11 @@ export class PipeAdapter {
   /**
    * Handle JSON command
    */
-  private async handleJSON(input: string): Promise<NucleusResponse> {
-    let command: NucleusCommand;
+  private async handleJSON(input: string): Promise<LatticeResponse> {
+    let command: LatticeCommand;
 
     try {
-      command = JSON.parse(input) as NucleusCommand;
+      command = JSON.parse(input) as LatticeCommand;
     } catch {
       return {
         success: false,
@@ -159,7 +159,7 @@ export class PipeAdapter {
   /**
    * Execute a single command (for programmatic use)
    */
-  async executeCommand(command: NucleusCommand): Promise<NucleusResponse> {
+  async executeCommand(command: LatticeCommand): Promise<LatticeResponse> {
     if (command.type === "load") {
       return this.tool.executeAsync(command);
     }
@@ -169,7 +169,7 @@ export class PipeAdapter {
   /**
    * Get the underlying tool
    */
-  getTool(): NucleusTool {
+  getTool(): LatticeTool {
     return this.tool;
   }
 }

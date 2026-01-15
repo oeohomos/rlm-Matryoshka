@@ -18,12 +18,12 @@ describe("ClaudeCodeAdapter", () => {
 
       expect(tools).toHaveLength(6);
       expect(tools.map((t) => t.name)).toEqual([
-        "nucleus_load",
-        "nucleus_query",
-        "nucleus_bindings",
-        "nucleus_reset",
-        "nucleus_stats",
-        "nucleus_help",
+        "lattice_load",
+        "lattice_query",
+        "lattice_bindings",
+        "lattice_reset",
+        "lattice_stats",
+        "lattice_help",
       ]);
     });
 
@@ -41,22 +41,22 @@ describe("ClaudeCodeAdapter", () => {
   });
 
   describe("callTool", () => {
-    it("should handle nucleus_help", async () => {
-      const result = await adapter.callTool("nucleus_help", {});
+    it("should handle lattice_help", async () => {
+      const result = await adapter.callTool("lattice_help", {});
 
       expect(result.content).toHaveLength(1);
       expect(result.content[0].type).toBe("text");
       expect(result.content[0].text).toContain("grep");
     });
 
-    it("should handle nucleus_bindings when empty", async () => {
-      const result = await adapter.callTool("nucleus_bindings", {});
+    it("should handle lattice_bindings when empty", async () => {
+      const result = await adapter.callTool("lattice_bindings", {});
 
       expect(result.content[0].text).toContain("No bindings");
     });
 
-    it("should handle nucleus_query without document", async () => {
-      const result = await adapter.callTool("nucleus_query", { command: '(grep "test")' });
+    it("should handle lattice_query without document", async () => {
+      const result = await adapter.callTool("lattice_query", { command: '(grep "test")' });
 
       expect(result.content[0].text).toContain("Error");
       expect(result.content[0].text).toContain("No document loaded");
@@ -78,31 +78,31 @@ describe("ClaudeCodeAdapter", () => {
       });
 
       // Query
-      const queryResult = await adapter.callTool("nucleus_query", {
+      const queryResult = await adapter.callTool("lattice_query", {
         command: '(grep "error")',
       });
       expect(queryResult.content[0].text).toContain("2 results");
 
       // Bindings
-      const bindingsResult = await adapter.callTool("nucleus_bindings", {});
+      const bindingsResult = await adapter.callTool("lattice_bindings", {});
       expect(bindingsResult.content[0].text).toContain("RESULTS");
 
       // Stats
-      const statsResult = await adapter.callTool("nucleus_stats", {});
+      const statsResult = await adapter.callTool("lattice_stats", {});
       expect(statsResult.content[0].text).toContain("test");
 
       // Reset
-      const resetResult = await adapter.callTool("nucleus_reset", {});
+      const resetResult = await adapter.callTool("lattice_reset", {});
       expect(resetResult.content[0].text).toContain("reset");
 
       // Verify bindings cleared
-      const afterReset = await adapter.callTool("nucleus_bindings", {});
+      const afterReset = await adapter.callTool("lattice_bindings", {});
       expect(afterReset.content[0].text).toContain("No bindings");
     });
   });
 
   describe("getTool", () => {
-    it("should return underlying NucleusTool", () => {
+    it("should return underlying LatticeTool", () => {
       const tool = adapter.getTool();
       expect(tool).toBeDefined();
       expect(typeof tool.execute).toBe("function");
@@ -124,7 +124,7 @@ describe("generateMCPConfig", () => {
 
     const parsed = JSON.parse(config);
     expect(parsed.tools).toHaveLength(6);
-    expect(parsed.tools[0].name).toBe("nucleus_load");
+    expect(parsed.tools[0].name).toBe("lattice_load");
     expect(parsed.tools[0].input_schema).toBeDefined();
   });
 });

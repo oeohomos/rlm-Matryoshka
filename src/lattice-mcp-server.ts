@@ -1,19 +1,20 @@
 #!/usr/bin/env node
 /**
- * Nucleus MCP Server
+ * Lattice MCP Server
  *
  * A stateful document analysis tool for LLM agents with session lifecycle management.
+ * Uses Nucleus S-expression syntax for queries.
  *
  * SESSION LIFECYCLE:
  * - Sessions auto-expire after inactivity (default: 10 minutes)
  * - Loading a new document closes the previous session
- * - Explicit nucleus_close tool for cleanup
+ * - Explicit lattice_close tool for cleanup
  * - Memory is freed when session ends
  *
  * Usage:
- *   1. nucleus_load - Load a document (starts session)
- *   2. nucleus_query - Run queries (resets inactivity timer)
- *   3. nucleus_close - Explicitly end session (or wait for timeout)
+ *   1. lattice_load - Load a document (starts session)
+ *   2. lattice_query - Run queries (resets inactivity timer)
+ *   3. lattice_close - Explicitly end session (or wait for timeout)
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -49,7 +50,7 @@ function resetInactivityTimer(): void {
 
   timeoutHandle = setTimeout(() => {
     if (session) {
-      console.error(`[Nucleus] Session expired after ${SESSION_TIMEOUT_MS / 1000}s inactivity`);
+      console.error(`[Lattice] Session expired after ${SESSION_TIMEOUT_MS / 1000}s inactivity`);
       closeSession("timeout");
     }
   }, SESSION_TIMEOUT_MS);
@@ -59,7 +60,7 @@ function closeSession(reason: string): void {
   if (session) {
     const duration = Date.now() - session.loadedAt.getTime();
     console.error(
-      `[Nucleus] Session closed: ${reason} | ` +
+      `[Lattice] Session closed: ${reason} | ` +
       `Document: ${session.documentPath} | ` +
       `Duration: ${Math.round(duration / 1000)}s | ` +
       `Queries: ${session.queryCount}`
@@ -94,7 +95,7 @@ function getSessionInfo(): string {
 
 const TOOLS = [
   {
-    name: "nucleus_load",
+    name: "lattice_load",
     description: `Load a document for analysis. Starts a new session (closes any existing session).
 
 USE THIS TOOL WHEN:
@@ -108,7 +109,7 @@ DO NOT USE WHEN:
 - You only need one simple search
 
 SESSION: Document stays loaded for ${SESSION_TIMEOUT_MS / 60000} minutes of inactivity.
-Call nucleus_close when done to free memory immediately.`,
+Call lattice_close when done to free memory immediately.`,
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -121,8 +122,8 @@ Call nucleus_close when done to free memory immediately.`,
     },
   },
   {
-    name: "nucleus_query",
-    description: `Execute a query on the loaded document. Resets the session timeout.
+    name: "lattice_query",
+    description: `Execute a Nucleus query on the loaded document. Resets the session timeout.
 
 COMMON PATTERNS:
 - (grep "pattern") - Search for regex, returns matching lines
@@ -138,14 +139,14 @@ Results are bound to RESULTS for chaining queries.`,
       properties: {
         command: {
           type: "string",
-          description: 'S-expression command, e.g., (grep "ERROR")',
+          description: 'Nucleus S-expression command, e.g., (grep "ERROR")',
         },
       },
       required: ["command"],
     },
   },
   {
-    name: "nucleus_close",
+    name: "lattice_close",
     description:
       "Close the current session and free memory. " +
       "Call this when done analyzing a document. " +
@@ -157,7 +158,7 @@ Results are bound to RESULTS for chaining queries.`,
     },
   },
   {
-    name: "nucleus_status",
+    name: "lattice_status",
     description: "Get current session status including document info, memory usage, and timeout.",
     inputSchema: {
       type: "object" as const,
@@ -166,7 +167,7 @@ Results are bound to RESULTS for chaining queries.`,
     },
   },
   {
-    name: "nucleus_bindings",
+    name: "lattice_bindings",
     description: "Show current variable bindings (RESULTS, _1, _2, etc).",
     inputSchema: {
       type: "object" as const,
@@ -175,7 +176,7 @@ Results are bound to RESULTS for chaining queries.`,
     },
   },
   {
-    name: "nucleus_reset",
+    name: "lattice_reset",
     description: "Reset variable bindings but keep document loaded.",
     inputSchema: {
       type: "object" as const,
@@ -184,8 +185,8 @@ Results are bound to RESULTS for chaining queries.`,
     },
   },
   {
-    name: "nucleus_help",
-    description: "Get complete command reference documentation.",
+    name: "lattice_help",
+    description: "Get complete Nucleus command reference documentation.",
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -232,7 +233,7 @@ function formatResult(result: { success: boolean; value?: unknown; error?: strin
 async function handleToolCall(name: string, args: Record<string, unknown>): Promise<CallToolResult> {
   try {
     switch (name) {
-      case "nucleus_load": {
+      case "lattice_load": {
         const filePath = args.filePath as string;
         if (!filePath) {
           return { content: [{ type: "text", text: "Error: filePath is required" }] };
@@ -276,7 +277,7 @@ async function handleToolCall(name: string, args: Record<string, unknown>): Prom
         // Start inactivity timer
         resetInactivityTimer();
 
-        console.error(`[Nucleus] Session started: ${filePath} (${stats.lineCount} lines)`);
+        console.error(`[Lattice] Session started: ${filePath} (${stats.lineCount} lines)`);
 
         return {
           content: [{
@@ -285,17 +286,17 @@ async function handleToolCall(name: string, args: Record<string, unknown>): Prom
               `  Lines: ${stats.lineCount.toLocaleString()}\n` +
               `  Size: ${(stats.length / 1024).toFixed(1)} KB\n` +
               `  Session timeout: ${SESSION_TIMEOUT_MS / 60000} minutes\n\n` +
-              `Ready for queries. Call nucleus_close when done.`,
+              `Ready for queries. Call lattice_close when done.`,
           }],
         };
       }
 
-      case "nucleus_query": {
+      case "lattice_query": {
         if (!session) {
           return {
             content: [{
               type: "text",
-              text: "Error: No active session. Use nucleus_load first.",
+              text: "Error: No active session. Use lattice_load first.",
             }],
           };
         }
@@ -314,7 +315,7 @@ async function handleToolCall(name: string, args: Record<string, unknown>): Prom
         return { content: [{ type: "text", text: formatResult(result) }] };
       }
 
-      case "nucleus_close": {
+      case "lattice_close": {
         if (!session) {
           return { content: [{ type: "text", text: "No active session to close." }] };
         }
@@ -324,11 +325,11 @@ async function handleToolCall(name: string, args: Record<string, unknown>): Prom
         return { content: [{ type: "text", text: info }] };
       }
 
-      case "nucleus_status": {
+      case "lattice_status": {
         return { content: [{ type: "text", text: getSessionInfo() }] };
       }
 
-      case "nucleus_bindings": {
+      case "lattice_bindings": {
         if (!session) {
           return { content: [{ type: "text", text: "No active session." }] };
         }
@@ -351,7 +352,7 @@ async function handleToolCall(name: string, args: Record<string, unknown>): Prom
         };
       }
 
-      case "nucleus_reset": {
+      case "lattice_reset": {
         if (!session) {
           return { content: [{ type: "text", text: "No active session." }] };
         }
@@ -363,7 +364,7 @@ async function handleToolCall(name: string, args: Record<string, unknown>): Prom
         return { content: [{ type: "text", text: "Bindings reset. Document still loaded." }] };
       }
 
-      case "nucleus_help": {
+      case "lattice_help": {
         return {
           content: [{ type: "text", text: NucleusEngine.getCommandReference() }],
         };
@@ -392,7 +393,7 @@ process.on("SIGTERM", () => {
 async function main() {
   const server = new Server(
     {
-      name: "nucleus",
+      name: "lattice",
       version: "1.0.0",
     },
     {
@@ -414,12 +415,12 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  console.error("[Nucleus] MCP server started");
-  console.error(`[Nucleus] Session timeout: ${SESSION_TIMEOUT_MS / 1000}s`);
-  console.error(`[Nucleus] Max document size: ${MAX_DOCUMENT_SIZE / 1024 / 1024}MB`);
+  console.error("[Lattice] MCP server started");
+  console.error(`[Lattice] Session timeout: ${SESSION_TIMEOUT_MS / 1000}s`);
+  console.error(`[Lattice] Max document size: ${MAX_DOCUMENT_SIZE / 1024 / 1024}MB`);
 }
 
 main().catch((err) => {
-  console.error("[Nucleus] Fatal error:", err);
+  console.error("[Lattice] Fatal error:", err);
   process.exit(1);
 });

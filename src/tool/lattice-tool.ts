@@ -1,8 +1,8 @@
 /**
- * NucleusTool - Stateful document analysis tool
+ * LatticeTool - Stateful document analysis tool
  *
  * Provides a unified interface for interactive document analysis
- * that can be used via multiple adapters:
+ * using Nucleus S-expression syntax. Can be used via multiple adapters:
  * - Claude Code tool registration
  * - Pipe-based REPL
  * - HTTP server
@@ -13,7 +13,7 @@ import { NucleusEngine, type ExecutionResult } from "../engine/nucleus-engine.js
 /**
  * Command types supported by the tool
  */
-export type NucleusCommand =
+export type LatticeCommand =
   | { type: "load"; filePath: string }
   | { type: "loadContent"; content: string; name?: string }
   | { type: "query"; command: string }
@@ -25,7 +25,7 @@ export type NucleusCommand =
 /**
  * Unified response type
  */
-export interface NucleusResponse {
+export interface LatticeResponse {
   success: boolean;
   data?: unknown;
   error?: string;
@@ -33,12 +33,12 @@ export interface NucleusResponse {
 }
 
 /**
- * NucleusTool - Stateful wrapper around NucleusEngine
+ * LatticeTool - Stateful wrapper around NucleusEngine
  *
  * Maintains state across multiple commands, allowing iterative
- * document exploration.
+ * document exploration using Nucleus query syntax.
  */
-export class NucleusTool {
+export class LatticeTool {
   private engine: NucleusEngine;
   private documentPath: string | null = null;
   private documentName: string | null = null;
@@ -50,7 +50,7 @@ export class NucleusTool {
   /**
    * Execute a command
    */
-  execute(command: NucleusCommand): NucleusResponse {
+  execute(command: LatticeCommand): LatticeResponse {
     switch (command.type) {
       case "load":
         return this.load(command.filePath);
@@ -81,7 +81,7 @@ export class NucleusTool {
   /**
    * Execute a command asynchronously (for file loading)
    */
-  async executeAsync(command: NucleusCommand): Promise<NucleusResponse> {
+  async executeAsync(command: LatticeCommand): Promise<LatticeResponse> {
     if (command.type === "load") {
       return this.loadAsync(command.filePath);
     }
@@ -91,7 +91,7 @@ export class NucleusTool {
   /**
    * Load a document from file (async)
    */
-  async loadAsync(filePath: string): Promise<NucleusResponse> {
+  async loadAsync(filePath: string): Promise<LatticeResponse> {
     try {
       await this.engine.loadFile(filePath);
       this.documentPath = filePath;
@@ -114,7 +114,7 @@ export class NucleusTool {
   /**
    * Load a document from file (sync - requires pre-loaded content)
    */
-  private load(_filePath: string): NucleusResponse {
+  private load(_filePath: string): LatticeResponse {
     // For sync operation, return instruction to use async
     return {
       success: false,
@@ -125,7 +125,7 @@ export class NucleusTool {
   /**
    * Load a document from string content
    */
-  private loadContent(content: string, name?: string): NucleusResponse {
+  private loadContent(content: string, name?: string): LatticeResponse {
     try {
       this.engine.loadContent(content);
       this.documentPath = null;
@@ -148,7 +148,7 @@ export class NucleusTool {
   /**
    * Execute a Nucleus query
    */
-  private query(command: string): NucleusResponse {
+  private query(command: string): LatticeResponse {
     if (!this.engine.isLoaded()) {
       return {
         success: false,
@@ -200,7 +200,7 @@ export class NucleusTool {
   /**
    * Get current bindings
    */
-  private getBindings(): NucleusResponse {
+  private getBindings(): LatticeResponse {
     const bindings = this.engine.getBindings();
     return {
       success: true,
@@ -214,7 +214,7 @@ export class NucleusTool {
   /**
    * Reset state
    */
-  private reset(): NucleusResponse {
+  private reset(): LatticeResponse {
     this.engine.reset();
     return {
       success: true,
@@ -225,7 +225,7 @@ export class NucleusTool {
   /**
    * Get document stats
    */
-  private getStats(): NucleusResponse {
+  private getStats(): LatticeResponse {
     if (!this.engine.isLoaded()) {
       return {
         success: false,
@@ -248,7 +248,7 @@ export class NucleusTool {
   /**
    * Get help text
    */
-  private getHelp(): NucleusResponse {
+  private getHelp(): LatticeResponse {
     return {
       success: true,
       message: NucleusEngine.getCommandReference(),
@@ -278,9 +278,9 @@ export class NucleusTool {
 }
 
 /**
- * Parse a text command into a NucleusCommand
+ * Parse a text command into a LatticeCommand
  */
-export function parseCommand(input: string): NucleusCommand | null {
+export function parseCommand(input: string): LatticeCommand | null {
   const trimmed = input.trim();
 
   if (!trimmed) return null;
@@ -329,7 +329,7 @@ export function parseCommand(input: string): NucleusCommand | null {
 /**
  * Format a response for text output
  */
-export function formatResponse(response: NucleusResponse): string {
+export function formatResponse(response: LatticeResponse): string {
   if (!response.success) {
     return `Error: ${response.error}`;
   }
@@ -370,3 +370,8 @@ export function formatResponse(response: NucleusResponse): string {
 
   return parts.join("\n");
 }
+
+// Backwards compatibility aliases
+export type NucleusCommand = LatticeCommand;
+export type NucleusResponse = LatticeResponse;
+export const NucleusTool = LatticeTool;

@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
-  NucleusTool,
+  LatticeTool,
   parseCommand,
   formatResponse,
-} from "../../src/tool/nucleus-tool.js";
+} from "../../src/tool/lattice-tool.js";
 
-describe("NucleusTool", () => {
+describe("LatticeTool", () => {
   describe("loadContent", () => {
     it("should load content from string", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       const result = tool.execute({
         type: "loadContent",
         content: "line1\nline2\nline3",
@@ -21,7 +21,7 @@ describe("NucleusTool", () => {
     });
 
     it("should use default name for inline document", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       const result = tool.execute({
         type: "loadContent",
         content: "test data",
@@ -34,7 +34,7 @@ describe("NucleusTool", () => {
 
   describe("query", () => {
     it("should execute grep command", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       tool.execute({ type: "loadContent", content: "error line\nok line\nerror again" });
 
       const result = tool.execute({ type: "query", command: '(grep "error")' });
@@ -44,7 +44,7 @@ describe("NucleusTool", () => {
     });
 
     it("should return error when no document loaded", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       const result = tool.execute({ type: "query", command: '(grep "test")' });
 
       expect(result.success).toBe(false);
@@ -52,7 +52,7 @@ describe("NucleusTool", () => {
     });
 
     it("should maintain bindings across queries", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       tool.execute({ type: "loadContent", content: "a\nb\nc\nd\ne" });
       tool.execute({ type: "query", command: '(grep "[a-z]")' }); // match all lines
 
@@ -65,7 +65,7 @@ describe("NucleusTool", () => {
 
   describe("bindings", () => {
     it("should return current bindings", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       tool.execute({ type: "loadContent", content: "test" });
       tool.execute({ type: "query", command: '(grep "test")' });
 
@@ -76,7 +76,7 @@ describe("NucleusTool", () => {
     });
 
     it("should report no bindings when empty", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       const result = tool.execute({ type: "bindings" });
 
       expect(result.success).toBe(true);
@@ -86,7 +86,7 @@ describe("NucleusTool", () => {
 
   describe("reset", () => {
     it("should clear bindings", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       tool.execute({ type: "loadContent", content: "test" });
       tool.execute({ type: "query", command: '(grep "test")' });
       tool.execute({ type: "reset" });
@@ -100,7 +100,7 @@ describe("NucleusTool", () => {
 
   describe("stats", () => {
     it("should return document statistics", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       tool.execute({ type: "loadContent", content: "line1\nline2\nline3", name: "stats-test" });
 
       const result = tool.execute({ type: "stats" });
@@ -111,7 +111,7 @@ describe("NucleusTool", () => {
     });
 
     it("should return error when no document loaded", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       const result = tool.execute({ type: "stats" });
 
       expect(result.success).toBe(false);
@@ -121,7 +121,7 @@ describe("NucleusTool", () => {
 
   describe("help", () => {
     it("should return help text", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       const result = tool.execute({ type: "help" });
 
       expect(result.success).toBe(true);
@@ -132,12 +132,12 @@ describe("NucleusTool", () => {
 
   describe("isLoaded", () => {
     it("should return false initially", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       expect(tool.isLoaded()).toBe(false);
     });
 
     it("should return true after loading", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       tool.execute({ type: "loadContent", content: "test" });
       expect(tool.isLoaded()).toBe(true);
     });
@@ -145,12 +145,12 @@ describe("NucleusTool", () => {
 
   describe("getDocumentName", () => {
     it("should return null initially", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       expect(tool.getDocumentName()).toBeNull();
     });
 
     it("should return document name after loading", () => {
-      const tool = new NucleusTool();
+      const tool = new LatticeTool();
       tool.execute({ type: "loadContent", content: "test", name: "my-doc" });
       expect(tool.getDocumentName()).toBe("my-doc");
     });

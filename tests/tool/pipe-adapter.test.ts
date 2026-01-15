@@ -78,7 +78,7 @@ describe("PipeAdapter", () => {
   });
 
   describe("getTool", () => {
-    it("should return the underlying NucleusTool", () => {
+    it("should return the underlying LatticeTool", () => {
       const adapter = new PipeAdapter();
       const tool = adapter.getTool();
 

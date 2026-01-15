@@ -8,11 +8,11 @@
   "bin": {
     "rlm": "dist/index.js",
     "rlm-mcp": "dist/mcp-server.js",
-    "nucleus-mcp": "dist/nucleus-mcp-server.js",
-    "nucleus-repl": "dist/repl/nucleus-repl.js",
-    "nucleus-pipe": "dist/tool/adapters/pipe.js",
-    "nucleus-http": "dist/tool/adapters/http.js",
-    "nucleus-setup": "dist/scripts/setup-claude-code.js"
+    "lattice-mcp": "dist/lattice-mcp-server.js",
+    "lattice-repl": "dist/repl/nucleus-repl.js",
+    "lattice-pipe": "dist/tool/adapters/pipe.js",
+    "lattice-http": "dist/tool/adapters/http.js",
+    "lattice-setup": "dist/scripts/setup-claude-code.js"
   },
   "exports": {
     ".": {

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
- * HTTP Server Adapter for Nucleus
+ * HTTP Server Adapter for Lattice
  *
  * Provides a stateful REST API for document analysis with session lifecycle management.
+ * Uses Nucleus S-expression syntax for queries.
  *
  * SESSION LIFECYCLE:
  * - Sessions auto-expire after inactivity (default: 10 minutes)
@@ -11,7 +12,7 @@
  *
  * Endpoints:
  *   POST /load          - Load a document (starts session)
- *   POST /query         - Execute a Nucleus command (resets timeout)
+ *   POST /query         - Execute a Nucleus query (resets timeout)
  *   POST /close         - Close session and free memory
  *   GET  /status        - Get session status (timeout, queries, etc)
  *   GET  /bindings      - Get current variable bindings
@@ -21,7 +22,7 @@
  *   GET  /health        - Health check
  *
  * Usage:
- *   nucleus-http --port 3456 --timeout 600
+ *   lattice-http --port 3456 --timeout 600
  *
  *   curl -X POST http://localhost:3456/load -d '{"filePath":"./data.txt"}'
  *   curl -X POST http://localhost:3456/query -d '{"command":"(grep \"error\")"}'
@@ -30,9 +31,9 @@
 
 import * as http from "node:http";
 import {
-  NucleusTool,
-  type NucleusResponse,
-} from "../nucleus-tool.js";
+  LatticeTool,
+  type LatticeResponse,
+} from "../lattice-tool.js";
 
 export interface HttpAdapterOptions {
   /** Port to listen on (default: 3456) */
@@ -46,7 +47,7 @@ export interface HttpAdapterOptions {
 }
 
 interface Session {
-  tool: NucleusTool;
+  tool: LatticeTool;
   documentName: string | null;
   loadedAt: Date;
   lastAccessedAt: Date;
@@ -79,7 +80,7 @@ export class HttpAdapter {
 
     this.timeoutHandle = setTimeout(() => {
       if (this.session) {
-        console.log(`[Nucleus] Session expired after ${this.timeoutMs / 1000}s inactivity`);
+        console.log(`[Lattice] Session expired after ${this.timeoutMs / 1000}s inactivity`);
         this.closeSession("timeout");
       }
     }, this.timeoutMs);
@@ -89,7 +90,7 @@ export class HttpAdapter {
     if (this.session) {
       const duration = Date.now() - this.session.loadedAt.getTime();
       console.log(
-        `[Nucleus] Session closed: ${reason} | ` +
+        `[Lattice] Session closed: ${reason} | ` +
         `Document: ${this.session.documentName || "inline"} | ` +
         `Duration: ${Math.round(duration / 1000)}s | ` +
         `Queries: ${this.session.queryCount}`
@@ -136,7 +137,7 @@ export class HttpAdapter {
       this.server.on("error", reject);
 
       this.server.listen(this.port, this.host, () => {
-        console.log(`Nucleus HTTP server running at http://${this.host}:${this.port}`);
+        console.log(`Lattice HTTP server running at http://${this.host}:${this.port}`);
         console.log(`Session timeout: ${this.timeoutMs / 1000} seconds`);
         console.log("Endpoints:");
         console.log("  POST /load      - Load a document (starts session)");
@@ -194,7 +195,7 @@ export class HttpAdapter {
     const path = url.pathname;
 
     try {
-      let response: NucleusResponse;
+      let response: LatticeResponse;
 
       switch (path) {
         case "/load":
@@ -245,7 +246,7 @@ export class HttpAdapter {
           break;
 
         case "/help":
-          response = new NucleusTool().execute({ type: "help" });
+          response = new LatticeTool().execute({ type: "help" });
           break;
 
         case "/health":
@@ -272,7 +273,7 @@ export class HttpAdapter {
   /**
    * Handle /load endpoint
    */
-  private async handleLoad(req: http.IncomingMessage): Promise<NucleusResponse> {
+  private async handleLoad(req: http.IncomingMessage): Promise<LatticeResponse> {
     const body = await this.readBody(req);
 
     // Close existing session
@@ -281,8 +282,8 @@ export class HttpAdapter {
     }
 
     // Create new session
-    const tool = new NucleusTool();
-    let response: NucleusResponse;
+    const tool = new LatticeTool();
+    let response: LatticeResponse;
 
     if (typeof body.filePath === "string") {
       response = await tool.executeAsync({ type: "load", filePath: body.filePath });
@@ -305,7 +306,7 @@ export class HttpAdapter {
         queryCount: 0,
       };
       this.resetInactivityTimer();
-      console.log(`[Nucleus] Session started: ${this.session.documentName}`);
+      console.log(`[Lattice] Session started: ${this.session.documentName}`);
     }
 
     return response;
@@ -314,7 +315,7 @@ export class HttpAdapter {
   /**
    * Handle /query endpoint
    */
-  private async handleQuery(req: http.IncomingMessage): Promise<NucleusResponse> {
+  private async handleQuery(req: http.IncomingMessage): Promise<LatticeResponse> {
     if (!this.session) {
       return { success: false, error: "No active session. POST /load first." };
     }
@@ -336,7 +337,7 @@ export class HttpAdapter {
   /**
    * Handle /close endpoint
    */
-  private handleClose(): NucleusResponse {
+  private handleClose(): LatticeResponse {
     if (!this.session) {
       return { success: true, message: "No active session to close." };
     }
@@ -349,7 +350,7 @@ export class HttpAdapter {
   /**
    * Handle request that requires an active session
    */
-  private handleWithSession(fn: (session: Session) => NucleusResponse): NucleusResponse {
+  private handleWithSession(fn: (session: Session) => LatticeResponse): LatticeResponse {
     if (!this.session) {
       return { success: false, error: "No active session. POST /load first." };
     }
@@ -392,7 +393,7 @@ export class HttpAdapter {
   /**
    * Send a successful response
    */
-  private sendResponse(res: http.ServerResponse, response: NucleusResponse): void {
+  private sendResponse(res: http.ServerResponse, response: LatticeResponse): void {
     res.writeHead(response.success ? 200 : 400);
     res.end(JSON.stringify(response, null, 2));
   }
@@ -408,7 +409,7 @@ export class HttpAdapter {
   /**
    * Get the underlying tool (if session exists)
    */
-  getTool(): NucleusTool | null {
+  getTool(): LatticeTool | null {
     return this.session?.tool ?? null;
   }
 
@@ -437,7 +438,7 @@ function main(): void {
 
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`
-Nucleus HTTP Server
+Lattice HTTP Server
 
 Usage:
   nucleus-http [options]
@@ -514,12 +515,12 @@ Examples:
 
   // Handle shutdown gracefully
   process.on("SIGINT", () => {
-    console.log("\n[Nucleus] Shutting down...");
+    console.log("\n[Lattice] Shutting down...");
     process.exit(0);
   });
 
   process.on("SIGTERM", () => {
-    console.log("[Nucleus] Terminating...");
+    console.log("[Lattice] Terminating...");
     process.exit(0);
   });
 

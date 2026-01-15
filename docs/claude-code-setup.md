@@ -1,6 +1,6 @@
-# Setting Up Nucleus for Claude Code
+# Setting Up Lattice for Claude Code
 
-Nucleus is a stateful document analysis tool that saves 80%+ tokens compared to reading files directly. This guide explains how to make it available to Claude Code.
+Lattice is a stateful document analysis tool that saves 80%+ tokens compared to reading files directly. It uses Nucleus S-expression syntax for queries. This guide explains how to make it available to Claude Code.
 
 ## Option 1: MCP Server (Recommended)
 
@@ -24,9 +24,9 @@ Add to your Claude Code settings (per-project or global):
 ```json
 {
   "mcpServers": {
-    "nucleus": {
+    "lattice": {
       "command": "npx",
-      "args": ["matryoshka-rlm", "nucleus-mcp"]
+      "args": ["matryoshka-rlm", "lattice-mcp"]
     }
   }
 }
@@ -36,8 +36,8 @@ Add to your Claude Code settings (per-project or global):
 ```json
 {
   "mcpServers": {
-    "nucleus": {
-      "command": "nucleus-mcp",
+    "lattice": {
+      "command": "lattice-mcp",
       "args": []
     }
   }
@@ -50,23 +50,23 @@ Once configured, Claude Code will see these tools:
 
 | Tool | Purpose |
 |------|---------|
-| `nucleus_load` | Load a document for analysis |
-| `nucleus_query` | Execute S-expression queries |
-| `nucleus_bindings` | Show current variable state |
-| `nucleus_reset` | Clear bindings |
-| `nucleus_stats` | Get document statistics |
-| `nucleus_help` | Command reference |
+| `lattice_load` | Load a document for analysis |
+| `lattice_query` | Execute Nucleus S-expression queries |
+| `lattice_bindings` | Show current variable state |
+| `lattice_reset` | Clear bindings |
+| `lattice_stats` | Get document statistics |
+| `lattice_help` | Nucleus command reference |
 
 ## Option 2: HTTP Server
 
-Run Nucleus as a REST API server that Claude can call via curl/fetch.
+Run Lattice as a REST API server that Claude can call via curl/fetch.
 
 ```bash
 # Start the server
-npx matryoshka-rlm nucleus-http --port 3456
+npx matryoshka-rlm lattice-http --port 3456
 
 # Or with global install
-nucleus-http --port 3456
+lattice-http --port 3456
 ```
 
 Then add to your project's CLAUDE.md:
@@ -74,7 +74,7 @@ Then add to your project's CLAUDE.md:
 ```markdown
 ## Document Analysis Tool
 
-For large files (>500 lines), use the Nucleus HTTP server instead of reading directly:
+For large files (>500 lines), use the Lattice HTTP server instead of reading directly:
 
 ```bash
 # Load document
@@ -96,23 +96,23 @@ Add instructions to your project's CLAUDE.md to tell Claude when to use the tool
 ```markdown
 ## Large File Analysis
 
-When analyzing files larger than 500 lines, use the Nucleus tool instead of reading the file directly. This saves ~80% of tokens.
+When analyzing files larger than 500 lines, use the Lattice tool instead of reading the file directly. This saves ~80% of tokens.
 
 ### Quick Start
 ```typescript
 import { PipeAdapter } from "matryoshka-rlm/tool";
 
-const nucleus = new PipeAdapter();
-await nucleus.executeCommand({ type: "load", filePath: "./large-file.txt" });
+const lattice = new PipeAdapter();
+await lattice.executeCommand({ type: "load", filePath: "./large-file.txt" });
 
 // Search
-const result = await nucleus.executeCommand({
+const result = await lattice.executeCommand({
   type: "query",
   command: '(grep "pattern")'
 });
 
 // Results persist - chain operations
-await nucleus.executeCommand({ type: "query", command: "(count RESULTS)" });
+await lattice.executeCommand({ type: "query", command: "(count RESULTS)" });
 ```
 
 ### When to Use
@@ -127,18 +127,18 @@ await nucleus.executeCommand({ type: "query", command: "(count RESULTS)" });
 - Need full document context
 ```
 
-## Why Nucleus Saves Tokens
+## Why Lattice Saves Tokens
 
-| Operation | Traditional | Nucleus | Savings |
+| Operation | Traditional | Lattice | Savings |
 |-----------|-------------|---------|---------|
 | Read 1000-line file | ~10,000 tokens | 0 | - |
 | Search for pattern | 0 | ~50 tokens | - |
 | View 10 results | 0 | ~200 tokens | - |
 | **Total** | ~10,000 | ~250 | **97%** |
 
-The document is loaded into Nucleus's memory (not the LLM context), so you only pay for the query and results, not the entire file.
+The document is loaded into Lattice's memory (not the LLM context), so you only pay for the query and results, not the entire file.
 
-## Query Language Quick Reference
+## Nucleus Query Language Quick Reference
 
 ```scheme
 ; Search
@@ -162,7 +162,7 @@ The document is loaded into Nucleus's memory (not the LLM context), so you only 
 ## Troubleshooting
 
 ### "No document loaded"
-Call `nucleus_load` before `nucleus_query`.
+Call `lattice_load` before `lattice_query`.
 
 ### State lost between calls
 MCP servers maintain state. If using HTTP, ensure you're hitting the same server instance.
@@ -170,4 +170,4 @@ MCP servers maintain state. If using HTTP, ensure you're hitting the same server
 ### Tool not appearing in Claude Code
 1. Check MCP server config syntax
 2. Restart Claude Code
-3. Verify the command works: `npx matryoshka-rlm nucleus-mcp`
+3. Verify the command works: `npx matryoshka-rlm lattice-mcp`

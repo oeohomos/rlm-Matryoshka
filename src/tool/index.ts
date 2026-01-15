@@ -1,8 +1,9 @@
 /**
- * Nucleus Tool - Stateful Document Analysis Tool
+ * Lattice Tool - Stateful Document Analysis Tool
  *
  * Provides a unified interface for interactive document analysis with
  * multiple adapter options for different integration scenarios.
+ * Uses Nucleus S-expression syntax for queries.
  *
  * Adapters:
  * - ClaudeCodeAdapter: Register as Claude Code tools
@@ -12,12 +13,16 @@
 
 // Core tool
 export {
-  NucleusTool,
+  LatticeTool,
   parseCommand,
   formatResponse,
+  type LatticeCommand,
+  type LatticeResponse,
+  // Backwards compatibility
+  NucleusTool,
   type NucleusCommand,
   type NucleusResponse,
-} from "./nucleus-tool.js";
+} from "./lattice-tool.js";
 
 // Adapters
 export {
