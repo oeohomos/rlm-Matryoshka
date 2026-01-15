@@ -297,3 +297,40 @@ describe("LC Solver Synthesis", () => {
     });
   });
 });
+
+describe("LC Solver Lines Command", () => {
+  const multiLineContext = `Line 1: Introduction
+Line 2: Start of config
+{
+  "name": "example",
+  "value": 42
+}
+Line 7: End of config
+Line 8: Conclusion`;
+
+  const tools = createMockTools(multiLineContext);
+  const bindings: Bindings = new Map();
+
+  it("should get specific line range", () => {
+    const result = solve(parse("(lines 3 6)").term!, tools, bindings);
+    expect(result.success).toBe(true);
+    expect(result.value).toBe(`{
+  "name": "example",
+  "value": 42
+}`);
+  });
+
+  it("should handle 1-indexed lines", () => {
+    const result = solve(parse("(lines 1 2)").term!, tools, bindings);
+    expect(result.success).toBe(true);
+    expect(result.value).toBe(`Line 1: Introduction
+Line 2: Start of config`);
+  });
+
+  it("should clamp to valid range", () => {
+    const result = solve(parse("(lines 7 100)").term!, tools, bindings);
+    expect(result.success).toBe(true);
+    expect(result.value).toBe(`Line 7: End of config
+Line 8: Conclusion`);
+  });
+});

@@ -21,6 +21,7 @@ export type LCTerm =
   | LCGrep
   | LCFuzzySearch
   | LCTextStats
+  | LCLines
   | LCFilter
   | LCMap
   | LCReduce
@@ -82,6 +83,16 @@ export interface LCFuzzySearch {
  */
 export interface LCTextStats {
   tag: "text_stats";
+}
+
+/**
+ * (lines <start> <end>) - get lines from document
+ * Returns the text content from line start to line end (1-indexed, inclusive)
+ */
+export interface LCLines {
+  tag: "lines";
+  start: number;
+  end: number;
 }
 
 /**

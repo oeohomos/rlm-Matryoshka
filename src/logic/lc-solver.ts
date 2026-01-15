@@ -144,6 +144,18 @@ function evaluate(
       return stats;
     }
 
+    case "lines": {
+      log(`[Solver] Getting lines ${term.start} to ${term.end}`);
+      const allLines = tools.context.split("\n");
+      // Convert to 0-indexed and clamp to valid range
+      const startIdx = Math.max(0, term.start - 1);
+      const endIdx = Math.min(allLines.length, term.end);
+      const selectedLines = allLines.slice(startIdx, endIdx);
+      const content = selectedLines.join("\n");
+      log(`[Solver] Retrieved ${selectedLines.length} lines (${content.length} chars)`);
+      return content;
+    }
+
     // ==========================
     // PURE OPERATIONS - Use miniKanren for filtering/classification
     // ==========================

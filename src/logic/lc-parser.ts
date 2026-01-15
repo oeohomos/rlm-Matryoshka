@@ -313,6 +313,18 @@ function parseList(state: ParserState): LCTerm | null {
       return { tag: "text_stats" };
     }
 
+    case "lines": {
+      const startTerm = parseTerm(state);
+      if (!startTerm || startTerm.tag !== "lit" || typeof startTerm.value !== "number") {
+        return null;
+      }
+      const endTerm = parseTerm(state);
+      if (!endTerm || endTerm.tag !== "lit" || typeof endTerm.value !== "number") {
+        return null;
+      }
+      return { tag: "lines", start: startTerm.value, end: endTerm.value };
+    }
+
     case "filter": {
       const collection = parseTerm(state);
       if (!collection) return null;
@@ -598,6 +610,8 @@ export function prettyPrint(term: LCTerm): string {
         : `(fuzzy_search "${term.query}")`;
     case "text_stats":
       return "(text_stats)";
+    case "lines":
+      return `(lines ${term.start} ${term.end})`;
     case "filter":
       return `(filter ${prettyPrint(term.collection)} ${prettyPrint(term.predicate)})`;
     case "map":

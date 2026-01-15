@@ -27,21 +27,22 @@ function buildSystemPrompt(
   return `You analyze documents to answer queries. Output ONE command per turn.
 
 COMMANDS:
-(grep "pattern")                                    - search document
+(grep "pattern")                                    - search document, returns matching lines with line numbers
+(lines START END)                                   - get lines START to END (for multi-line content like JSON/code blocks)
 (filter RESULTS (lambda x (match x "pattern" 0)))   - filter results
 (map RESULTS (lambda x (match x "pattern" 1)))      - extract field from each result
 (sum RESULTS)                                       - sum numbers (for "total", "sum")
 (count RESULTS)                                     - count items (for "how many")
 
+WORKFLOW for multi-line content (JSON, code blocks, configs):
+1. (grep "keyword") to find the line number where the content starts
+2. (lines START END) to get the full block - use line numbers from grep results
+
 QUERY TYPES - match your response to the query:
-- "list/show/what are" -> return the actual items: <<<FINAL>>>item1, item2, item3<<<END>>>
+- "find/print/show config/example/JSON" -> use grep to find line, then (lines N M) for full block
+- "list/show/what are" -> return the actual items: <<<FINAL>>>item1, item2...<<<END>>>
 - "how many/count" -> use (count RESULTS)
 - "total/sum" -> use (sum RESULTS)
-
-TYPE COERCION (use when you see specific data formats):
-(parseDate str)                                     - parse date -> "YYYY-MM-DD"
-(parseCurrency str)                                 - parse "$1,234.56" -> 1234.56
-(parseNumber str)                                   - parse "1,234" or "50%" -> number
 
 Output final answer as: <<<FINAL>>>answer<<<END>>>
 
