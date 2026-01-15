@@ -3,16 +3,17 @@
   "version": "0.1.1",
   "type": "module",
   "description": "Recursive Language Model - Process documents larger than LLM context windows",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/lib.js",
+  "types": "dist/lib.d.ts",
   "bin": {
     "rlm": "dist/index.js",
-    "rlm-mcp": "dist/mcp-server.js"
+    "rlm-mcp": "dist/mcp-server.js",
+    "nucleus-repl": "dist/repl/nucleus-repl.js"
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/lib.d.ts",
+      "default": "./dist/lib.js"
     },
     "./rlm": {
       "types": "./dist/rlm.d.ts",
@@ -21,6 +22,14 @@
     "./server": {
       "types": "./dist/mcp-server.d.ts",
       "default": "./dist/mcp-server.js"
+    },
+    "./engine": {
+      "types": "./dist/engine/index.d.ts",
+      "default": "./dist/engine/index.js"
+    },
+    "./repl": {
+      "types": "./dist/repl/index.d.ts",
+      "default": "./dist/repl/index.js"
     }
   },
   "files": [
@@ -38,6 +47,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "mcp": "tsx src/mcp-server.ts",
+    "repl": "tsx src/repl/nucleus-repl.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [

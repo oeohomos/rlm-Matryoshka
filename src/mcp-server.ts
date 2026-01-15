@@ -3,6 +3,10 @@
  * MCP Server for RLM
  *
  * Provides an MCP-compatible server that exposes the RLM as a tool.
+ *
+ * Two tools are available:
+ * - analyze_document: Full RLM with LLM orchestration (for complex queries)
+ * - nucleus_execute: Direct Nucleus command execution (no LLM needed)
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -16,6 +20,7 @@ import { runRLM } from "./rlm.js";
 import { loadConfig } from "./config.js";
 import { createLLMClient } from "./llm/index.js";
 import type { LLMQueryFn } from "./llm/types.js";
+import { NucleusEngine } from "./engine/nucleus-engine.js";
 
 export interface MCPTool {
   name: string;
@@ -46,7 +51,8 @@ const ANALYZE_DOCUMENT_TOOL: MCPTool = {
   description:
     "Analyze a document using the Recursive Language Model (RLM). " +
     "The RLM can process documents larger than the context window by " +
-    "iteratively exploring the content with code execution.",
+    "iteratively exploring the content with code execution. " +
+    "Use this for complex, open-ended queries that need LLM reasoning.",
   inputSchema: {
     type: "object",
     properties: {
@@ -71,11 +77,53 @@ const ANALYZE_DOCUMENT_TOOL: MCPTool = {
   },
 };
 
+const NUCLEUS_EXECUTE_TOOL: MCPTool = {
+  name: "nucleus_execute",
+  description:
+    "Execute Nucleus commands directly on a document without LLM orchestration. " +
+    "Use this for precise, programmatic document analysis when you know exactly " +
+    "what commands to run. Commands use S-expression syntax. " +
+    "Examples: (grep \"pattern\"), (filter RESULTS (lambda (x) (match x \"error\" 0))), (count RESULTS)",
+  inputSchema: {
+    type: "object",
+    properties: {
+      command: {
+        type: "string",
+        description: "Nucleus S-expression command to execute (e.g., '(grep \"ERROR\")')",
+      },
+      filePath: {
+        type: "string",
+        description: "Path to the document file to analyze",
+      },
+      sessionId: {
+        type: "string",
+        description: "Optional session ID for maintaining state across multiple commands",
+      },
+    },
+    required: ["command", "filePath"],
+  },
+};
+
+const NUCLEUS_COMMANDS_TOOL: MCPTool = {
+  name: "nucleus_commands",
+  description:
+    "Get reference documentation for available Nucleus commands. " +
+    "Call this to see all available commands, their syntax, and examples.",
+  inputSchema: {
+    type: "object",
+    properties: {},
+    required: [],
+  },
+};
+
 /**
  * Create an MCP server instance for testing or direct use
  */
 export function createMCPServer(options: MCPServerOptions = {}): MCPServerInstance {
   let llmClient: LLMQueryFn | undefined = options.llmClient;
+
+  // Session-based engine cache for stateful Nucleus execution
+  const engineSessions = new Map<string, NucleusEngine>();
 
   const ensureLLMClient = async (): Promise<LLMQueryFn> => {
     if (llmClient) {
@@ -94,54 +142,144 @@ export function createMCPServer(options: MCPServerOptions = {}): MCPServerInstan
     return llmClient;
   };
 
+  /**
+   * Get or create a NucleusEngine for a session
+   */
+  const getEngine = async (filePath: string, sessionId?: string): Promise<NucleusEngine> => {
+    const key = sessionId || filePath;
+
+    let engine = engineSessions.get(key);
+    if (engine && engine.isLoaded()) {
+      return engine;
+    }
+
+    engine = new NucleusEngine();
+    await engine.loadFile(filePath);
+    engineSessions.set(key, engine);
+    return engine;
+  };
+
   return {
     name: "rlm",
 
     getTools(): MCPTool[] {
-      return [ANALYZE_DOCUMENT_TOOL];
+      return [ANALYZE_DOCUMENT_TOOL, NUCLEUS_EXECUTE_TOOL, NUCLEUS_COMMANDS_TOOL];
     },
 
     async callTool(
       name: string,
       args: Record<string, unknown>
     ): Promise<MCPToolResult> {
-      if (name !== "analyze_document") {
+      // Handle nucleus_commands (no args needed)
+      if (name === "nucleus_commands") {
         return {
-          content: [{ type: "text", text: `Unknown tool: ${name}` }],
+          content: [{ type: "text", text: NucleusEngine.getCommandReference() }],
         };
       }
 
-      const { query, filePath, maxTurns, timeoutMs } = args as {
-        query: string;
-        filePath: string;
-        maxTurns?: number;
-        timeoutMs?: number;
+      // Handle nucleus_execute
+      if (name === "nucleus_execute") {
+        const { command, filePath, sessionId } = args as {
+          command: string;
+          filePath: string;
+          sessionId?: string;
+        };
+
+        if (!command || !filePath) {
+          return {
+            content: [{ type: "text", text: "Error: 'command' and 'filePath' are required" }],
+          };
+        }
+
+        try {
+          const engine = await getEngine(filePath, sessionId);
+          const result = engine.execute(command);
+
+          if (!result.success) {
+            return {
+              content: [{ type: "text", text: `Error: ${result.error}` }],
+            };
+          }
+
+          // Format the result
+          let text: string;
+          if (Array.isArray(result.value)) {
+            const arr = result.value as unknown[];
+            const preview = arr.slice(0, 20).map(item => {
+              if (typeof item === "object" && item !== null && "line" in item) {
+                const gr = item as { line: string; lineNum: number };
+                return `[${gr.lineNum}] ${gr.line.slice(0, 100)}`;
+              }
+              return JSON.stringify(item);
+            });
+            text = `Found ${arr.length} results:\n${preview.join("\n")}`;
+            if (arr.length > 20) {
+              text += `\n... and ${arr.length - 20} more`;
+            }
+            text += `\n\nResults bound to RESULTS. Use (filter RESULTS ...), (count RESULTS), (sum RESULTS) etc.`;
+          } else {
+            text = typeof result.value === "string" ? result.value : JSON.stringify(result.value, null, 2);
+          }
+
+          // Include logs if any useful info
+          if (result.logs.length > 0) {
+            const importantLogs = result.logs.filter(l =>
+              l.includes("Found") || l.includes("Sum") || l.includes("Count") || l.includes("Filter")
+            );
+            if (importantLogs.length > 0) {
+              text = importantLogs.join("\n") + "\n\n" + text;
+            }
+          }
+
+          return {
+            content: [{ type: "text", text }],
+          };
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          return {
+            content: [{ type: "text", text: `Error: ${errorMessage}` }],
+          };
+        }
+      }
+
+      // Handle analyze_document
+      if (name === "analyze_document") {
+        const { query, filePath, maxTurns, timeoutMs } = args as {
+          query: string;
+          filePath: string;
+          maxTurns?: number;
+          timeoutMs?: number;
+        };
+
+        // Notify callback if provided (for testing)
+        if (options.onRunRLM) {
+          options.onRunRLM({ maxTurns });
+        }
+
+        try {
+          const client = await ensureLLMClient();
+          const result = await runRLM(query, filePath, {
+            llmClient: client,
+            maxTurns: maxTurns || 10,
+            turnTimeoutMs: timeoutMs || 30000,
+          });
+
+          const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+
+          return {
+            content: [{ type: "text", text }],
+          };
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          return {
+            content: [{ type: "text", text: `Error: ${errorMessage}` }],
+          };
+        }
+      }
+
+      return {
+        content: [{ type: "text", text: `Unknown tool: ${name}` }],
       };
-
-      // Notify callback if provided (for testing)
-      if (options.onRunRLM) {
-        options.onRunRLM({ maxTurns });
-      }
-
-      try {
-        const client = await ensureLLMClient();
-        const result = await runRLM(query, filePath, {
-          llmClient: client,
-          maxTurns: maxTurns || 10,
-          turnTimeoutMs: timeoutMs || 30000,
-        });
-
-        const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-
-        return {
-          content: [{ type: "text", text }],
-        };
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        return {
-          content: [{ type: "text", text: `Error: ${errorMessage}` }],
-        };
-      }
     },
 
     async start(): Promise<void> {
@@ -153,7 +291,7 @@ export function createMCPServer(options: MCPServerOptions = {}): MCPServerInstan
 
       // List tools handler
       server.setRequestHandler(ListToolsRequestSchema, async () => ({
-        tools: [ANALYZE_DOCUMENT_TOOL],
+        tools: [ANALYZE_DOCUMENT_TOOL, NUCLEUS_EXECUTE_TOOL, NUCLEUS_COMMANDS_TOOL],
       }));
 
       // Call tool handler
