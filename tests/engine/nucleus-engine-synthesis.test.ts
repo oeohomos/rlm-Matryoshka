@@ -237,4 +237,53 @@ describe("NucleusEngine with Synthesis", () => {
       expect(countResult.value).toBe(2);
     });
   });
+
+  describe("synthesize standalone command", () => {
+    it("synthesizes function from example pairs", () => {
+      const engine = new NucleusEngine();
+      engine.loadContent("test");
+
+      // Synthesize an uppercase transformer
+      const result = engine.execute(`
+        (synthesize
+          ("hello" "HELLO")
+          ("world" "WORLD"))
+      `);
+
+      expect(result.success).toBe(true);
+      expect(result.value).toBeDefined();
+      // The synthesized function is returned directly
+      expect(typeof result.value).toBe("function");
+    });
+
+    it("synthesizes function using example keyword syntax", () => {
+      const engine = new NucleusEngine();
+      engine.loadContent("test");
+
+      // This is the documented syntax that currently fails
+      const result = engine.execute(`
+        (synthesize
+          (example "hello" "HELLO")
+          (example "world" "WORLD"))
+      `);
+
+      expect(result.success).toBe(true);
+      expect(result.value).toBeDefined();
+    });
+
+    it("synthesizes numeric transformer", () => {
+      const engine = new NucleusEngine();
+      engine.loadContent("test");
+
+      // Synthesize a doubling function
+      const result = engine.execute(`
+        (synthesize
+          ("1" 2)
+          ("5" 10)
+          ("10" 20))
+      `);
+
+      expect(result.success).toBe(true);
+    });
+  });
 });

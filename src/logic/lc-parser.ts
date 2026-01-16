@@ -619,12 +619,20 @@ function parseList(state: ParserState): LCTerm | null {
 
     case "synthesize": {
       // Parse list of [input output] pairs
+      // Supports: (synthesize ("in" out) ...) or (synthesize (example "in" out) ...)
       const examples: Array<{ input: string; output: string | number | boolean | null }> = [];
       while (peek(state) && peek(state)?.type !== "rparen") {
-        // Expect (input output) pair or [input output]
+        // Expect (input output) pair or [input output] or (example input output)
         const pairStart = peek(state);
         if (pairStart?.type === "lparen" || pairStart?.type === "lbracket") {
           consume(state); // ( or [
+
+          // Check for optional "example" keyword
+          const maybeExample = peek(state);
+          if (maybeExample?.type === "symbol" && maybeExample.value === "example") {
+            consume(state); // skip "example" keyword
+          }
+
           const input = parseTerm(state);
           if (!input || input.tag !== "lit" || typeof input.value !== "string") break;
           const output = parseTerm(state);
