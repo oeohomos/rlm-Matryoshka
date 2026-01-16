@@ -1,4 +1,4 @@
-import { isComp, Var, keysIn, Term, CompoundTerm } from './common';
+import { isComp, Var, keysIn, type Term, type CompoundTerm } from './common.js';
 
 // We use JavaScript arrays to represent lists of terms in ramo. This
 // presents a small problem, since JavaScript arrays are themselves

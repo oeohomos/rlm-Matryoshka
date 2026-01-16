@@ -37,6 +37,25 @@ export interface FilterConstraint {
 export type Constraint = ExtractionConstraint | TransformConstraint | FilterConstraint;
 
 /**
+ * Helper to convert filter examples to standard Example format
+ */
+function filterExamplesToExamples(
+  examples: Array<{ input: unknown; shouldMatch: boolean }>
+): Example[] {
+  return examples.map((e) => ({ input: e.input, output: e.shouldMatch }));
+}
+
+/**
+ * Get examples from any constraint type
+ */
+function getExamplesFromConstraint(constraint: Constraint): Example[] {
+  if (constraint.type === "filter") {
+    return filterExamplesToExamples(constraint.examples);
+  }
+  return constraint.examples;
+}
+
+/**
  * Synthesis result
  */
 export interface SynthesisEngineResult {
@@ -140,24 +159,25 @@ export class SynthesisEngine {
    */
   private synthesizeFromTemplates(constraint: Constraint): SynthesisEngineResult {
     const templates = this.getTemplatesForConstraint(constraint);
+    const examples = getExamplesFromConstraint(constraint);
     let candidatesExplored = 0;
 
     for (const template of templates) {
       candidatesExplored++;
 
       // Try to instantiate the template with the examples
-      const result = this.instantiateTemplate(template, constraint.examples);
+      const result = this.instantiateTemplate(template, examples);
 
       if (result) {
         // Test on all examples
-        const { passed, failed } = this.testOnExamples(result, constraint.examples);
+        const { passed, failed } = this.testOnExamples(result, examples);
 
         if (failed.length === 0) {
           return {
             success: true,
             program: result,
             code: exprToCode(result),
-            testedExamples: constraint.examples.length,
+            testedExamples: examples.length,
             passedExamples: passed.length,
             candidatesExplored,
             synthesisTimeMs: 0,
@@ -181,21 +201,22 @@ export class SynthesisEngine {
    * Uses the relational interpreter to search for programs.
    */
   private synthesizeWithMiniKanren(constraint: Constraint): Omit<SynthesisEngineResult, "synthesisTimeMs"> {
+    const examples = getExamplesFromConstraint(constraint);
     // Use miniKanren to find candidate programs
-    const candidates = synthesizeProgram(constraint.examples, this.config.maxCandidates);
+    const candidates = synthesizeProgram(examples, this.config.maxCandidates);
 
     let candidatesExplored = 0;
     for (const candidate of candidates) {
       candidatesExplored++;
 
       // Test the candidate on all examples
-      if (testProgram(candidate, constraint.examples)) {
+      if (testProgram(candidate, examples)) {
         return {
           success: true,
           program: candidate,
           code: exprToCode(candidate),
-          testedExamples: constraint.examples.length,
-          passedExamples: constraint.examples.length,
+          testedExamples: examples.length,
+          passedExamples: examples.length,
           candidatesExplored,
         };
       }
@@ -203,8 +224,8 @@ export class SynthesisEngine {
 
     return {
       success: false,
-      error: `No program found satisfying all ${constraint.examples.length} examples`,
-      testedExamples: constraint.examples.length,
+      error: `No program found satisfying all ${examples.length} examples`,
+      testedExamples: examples.length,
       passedExamples: 0,
       candidatesExplored,
     };

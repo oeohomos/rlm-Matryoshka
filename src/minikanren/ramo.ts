@@ -1,8 +1,8 @@
-import * as $ from './streams';
-import { reify } from './reify';
-import { Var, Term, Subst } from './common';
-import { sweeten, WILD } from './sugar';
-import { expand, Goal } from './goals';
+import * as $ from './streams.js';
+import { reify } from './reify.js';
+import { Var, type Term, type Subst } from './common.js';
+import { sweeten, WILD } from './sugar.js';
+import { expand, type Goal } from './goals.js';
 
 // `run` produces a stream of solution substitutions by applying a goal
 // function to a fresh variable (and a wildcard variable) and then

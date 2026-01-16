@@ -127,6 +127,9 @@ function compile(term: LCTerm): string {
 
     case "lambda":
       return `((${term.param}) => ${compile(term.body)})`;
+
+    default:
+      throw new Error(`Unsupported term tag for compilation: ${(term as LCTerm).tag}`);
   }
 }
 

@@ -13,11 +13,11 @@ export class Var {
   }
 }
 
-export function isComp(x: Term): boolean {
-  return x && typeof x === 'object' && !isVar(x);
+export function isComp(x: Term): x is CompoundTerm {
+  return x != null && typeof x === 'object' && !isVar(x);
 }
 
-export function isVar(x: any): boolean {
+export function isVar(x: unknown): x is Var {
   return x instanceof Var;
 }
 
@@ -28,8 +28,8 @@ export function isVar(x: any): boolean {
 // until we come to a term that is not associated in the substitution.
 export type Subst = Map<Var, Term>;
 
-export function walk(x: Var, s: Subst): Term {
-  if (s.has(x)) return walk(s.get(x), s);
+export function walk(x: Term, s: Subst): Term {
+  if (isVar(x) && s.has(x)) return walk(s.get(x)!, s);
   else return x;
 }
 
@@ -37,15 +37,15 @@ export function walk(x: Var, s: Subst): Term {
 // walks variable terms found within compound terms. It is used
 // exclusively in the reification process.
 export function walkAll(x: Term, s: Subst): Term {
-  x = walk(x, s);
-  if (isComp(x)) {
-    const x1 = Object.create(Object.getPrototypeOf(x));
-    for (let k of keysIn(x as CompoundTerm)) {
-      x1[k] = walkAll(x[k], s);
+  const walked = walk(x, s);
+  if (isComp(walked)) {
+    const x1 = Object.create(Object.getPrototypeOf(walked));
+    for (const k of keysIn(walked)) {
+      x1[k] = walkAll(walked[k], s);
     }
     return x1;
   } else {
-    return x;
+    return walked;
   }
 }
 

@@ -826,5 +826,8 @@ export function prettyPrint(term: LCTerm): string {
       return `(${prettyPrint(term.fn)} ${prettyPrint(term.arg)})`;
     case "lambda":
       return `(λ ${term.param} ${prettyPrint(term.body)})`;
+
+    default:
+      return `<unknown:${(term as LCTerm).tag}>`;
   }
 }

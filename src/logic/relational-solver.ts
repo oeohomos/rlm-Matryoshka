@@ -659,10 +659,13 @@ function reduce<T, R>(arr: T[], fn: (acc: R, item: T) => R, initial: R): R {
   return acc;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyFunction = (...args: any[]) => any;
+
 /**
  * Derive higher-order functions from reduce
  */
-export function deriveFunction(name: string): ((...args: unknown[]) => unknown) | null {
+export function deriveFunction(name: string): AnyFunction | null {
   switch (name) {
     case "filter":
       // filter = reduce with conditional cons

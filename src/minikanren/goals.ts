@@ -1,7 +1,7 @@
-import * as $ from './streams';
-import { unify } from './unify';
-import { unsweeten } from './sugar';
-import { toArray, iota, Var, Subst, Term } from './common';
+import * as $ from './streams.js';
+import { unify } from './unify.js';
+import { unsweeten } from './sugar.js';
+import { toArray, iota, Var, type Subst, type Term } from './common.js';
 
 // A "goal" is a function that takes a substitution and produces a
 // stream of substitutions.
@@ -16,8 +16,8 @@ export const failo: Goal = _ => $.empty;
 // the input substitution.
 export function eq(a: Term, b: Term): Goal {
   return s => {
-    s = unify(unsweeten(a), unsweeten(b), s);
-    return s ? $.unit(s) : $.empty;
+    const result = unify(unsweeten(a), unsweeten(b), s);
+    return result ? $.unit(result) : $.empty;
   };
 }
 

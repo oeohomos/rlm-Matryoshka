@@ -61,8 +61,9 @@ export interface ModelAdapter {
   /**
    * Get feedback message when code execution fails
    * @param error - Error message from execution
+   * @param code - Optional code that caused the error
    */
-  getErrorFeedback(error: string): string;
+  getErrorFeedback(error: string, code?: string): string;
 
   /**
    * Get feedback message after successful code execution

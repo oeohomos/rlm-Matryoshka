@@ -6,29 +6,26 @@
 // Core miniKanren
 export {
   LVar,
-  Goal,
-  Substitution,
+  type Goal,
+  type Substitution,
   unify,
   eq,
   conj,
   disj,
-  conde,
   fresh,
   run,
   reify,
   walk,
-  walkStar,
-  occurs,
 } from "./minikanren/core.js";
 
 // Regex synthesis
 export {
   synthesizeRegex,
-  RegexNode,
-  RegexSynthesisRequest,
-  RegexSynthesisResult,
-  astToRegex,
-  regexNodeToString,
+  type RegexNode,
+  type SynthesisInput as RegexSynthesisRequest,
+  type SynthesisResult as RegexSynthesisResult,
+  nodeToRegex as astToRegex,
+  nodeToRegex as regexNodeToString,
 } from "./regex/synthesis.js";
 
 // Extractor synthesis
