@@ -99,6 +99,12 @@ const TOOLS = [
     name: "lattice_load",
     description: `Load a document for analysis. Starts a new session (closes any existing session).
 
+RECOMMENDED WORKFLOW FOR CODEBASE ANALYSIS:
+1. Use Glob first to discover all relevant files (e.g., **/*.py, **/*.ts)
+2. Read small files (<300 lines) directly - Lattice is overkill for these
+3. Use Lattice only for large files (>500 lines)
+4. Aggregate data across ALL files, not just the largest one
+
 USE THIS TOOL WHEN:
 - Document is large (>500 lines) - saves 80%+ tokens vs reading directly
 - You need to search for multiple patterns in the same document
@@ -106,8 +112,9 @@ USE THIS TOOL WHEN:
 - You need to extract/aggregate structured data (counts, sums, patterns)
 
 DO NOT USE WHEN:
-- Document is small (<100 lines) - just read it directly
+- Document is small (<300 lines) - just read it directly
 - You only need one simple search
+- You haven't discovered files yet - use Glob first
 
 SESSION: Document stays loaded for ${SESSION_TIMEOUT_MS / 60000} minutes of inactivity.
 Call lattice_close when done to free memory immediately.`,

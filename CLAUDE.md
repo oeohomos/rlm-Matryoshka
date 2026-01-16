@@ -50,6 +50,17 @@ The synthesizer builds programs automatically from examples.
 
 When you need to analyze files larger than ~500 lines, use the Nucleus tool instead of reading files directly. This saves 80%+ tokens.
 
+### Recommended Workflow for Codebase Analysis
+1. **Use Glob first** to discover all relevant files (e.g., `**/*.py`, `**/*.ts`)
+2. **Read small files directly** (<300 lines) - Nucleus is overkill for these
+3. **Use Nucleus only for large files** (>500 lines)
+4. **Aggregate data across ALL files**, not just the largest one
+
+This workflow ensures complete analysis. Using Nucleus alone misses:
+- Small config/utility files with important details
+- Multi-file patterns (imports, classes across files)
+- File discovery and project structure
+
 ### When to Use Nucleus
 - File is >500 lines
 - You need multiple searches on the same file
@@ -57,9 +68,10 @@ When you need to analyze files larger than ~500 lines, use the Nucleus tool inst
 - Exploratory analysis (don't know what you're looking for)
 
 ### When NOT to Use
-- File is <100 lines (just read it)
+- File is <300 lines (just read it directly)
 - You only need one search
 - You need full document context/structure
+- You haven't discovered files yet (use Glob first)
 
 ### Quick Start (Programmatic)
 ```typescript
