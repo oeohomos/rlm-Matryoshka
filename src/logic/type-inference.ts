@@ -251,6 +251,8 @@ export function typeToString(type: LCType): string {
       return "any";
     case "void":
       return "void";
+    default:
+      return "unknown";
   }
 }
 
