@@ -65,9 +65,9 @@ The Lattice engine (`src/logic/`) processes Nucleus commands:
 
 Lattice uses **miniKanren** (a relational programming engine) for pattern classification and filtering operations.
 
-### SQLite Handle-Based Persistence
+### In-Memory Handle Storage
 
-For large result sets, RLM uses a handle-based architecture (`src/persistence/`) that achieves **97%+ token savings**:
+For large result sets, RLM uses a handle-based architecture with in-memory SQLite (`src/persistence/`) that achieves **97%+ token savings**:
 
 ```
 Traditional:  LLM sees full array    [15,000 tokens for 1000 results]
@@ -105,7 +105,7 @@ The LLM never writes JavaScript. It outputs Nucleus commands that Lattice execut
 | **Nucleus Adapter** | Prompts LLM to output Nucleus commands |
 | **Lattice Parser** | Parses S-expressions to AST |
 | **Lattice Solver** | Executes commands against document |
-| **SQLite Persistence** | Handle-based storage with FTS5 (97% token savings) |
+| **In-Memory Handles** | Handle-based storage with FTS5 (97% token savings) |
 | **miniKanren** | Relational engine for classification |
 | **RAG Hints** | Few-shot examples from past successes |
 
@@ -429,7 +429,7 @@ src/
 │   ├── lc-solver.ts    # Command executor (uses miniKanren)
 │   ├── type-inference.ts
 │   └── constraint-resolver.ts
-├── persistence/        # SQLite handle-based storage (97% token savings)
+├── persistence/        # In-memory handle storage (97% token savings)
 │   ├── session-db.ts   # In-memory SQLite with FTS5
 │   ├── handle-registry.ts  # Handle creation and stubs
 │   ├── handle-ops.ts   # Server-side operations
