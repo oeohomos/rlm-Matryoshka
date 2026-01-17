@@ -104,7 +104,7 @@ Query: "What is the total of all north sales data values?"
                     ▼
 ┌─────────────────────────────────────────────────────┐
 │ LLM receives: "RESULTS has 1 match"                 │
-│ LLM outputs: (sum RESULTS)  ← skips search step!   │
+│ LLM outputs: (sum RESULTS)  ← skips search step!    │
 └─────────────────────────────────────────────────────┘
 ```
 
