@@ -6,9 +6,13 @@
  * 2. Custom grammars from ~/.matryoshka/config.json
  */
 
+import { createRequire } from "node:module";
 import type { SupportedLanguage, LanguageConfig, SymbolKind } from "./types.js";
 import { BUILTIN_GRAMMARS, type BuiltinGrammar } from "./builtin-grammars.js";
 import { getCustomGrammars, type GrammarConfig } from "../config/grammar-config.js";
+
+// Use createRequire for checking if packages are installed
+const require = createRequire(import.meta.url);
 
 /**
  * Convert a BuiltinGrammar to LanguageConfig

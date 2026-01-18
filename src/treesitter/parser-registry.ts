@@ -6,6 +6,7 @@
  * Supports both built-in and custom grammars from config.
  */
 
+import { createRequire } from "node:module";
 import type { SupportedLanguage } from "./types.js";
 import {
   getLanguageForExtension,
@@ -15,7 +16,8 @@ import {
   getAvailableLanguages,
 } from "./language-map.js";
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+// Use createRequire for native tree-sitter bindings (CommonJS only)
+const require = createRequire(import.meta.url);
 const Parser = require("tree-sitter");
 
 // Tree-sitter types (using any for dynamic loading)
