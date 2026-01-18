@@ -328,31 +328,100 @@ Symbols include metadata like name, kind, start/end lines, and parent relationsh
 
 #### Adding Language Support
 
-To enable symbol extraction for additional languages, install the tree-sitter grammar package:
+Matryoshka includes built-in symbol mappings for 20+ languages. To enable a language, install its tree-sitter grammar package:
 
 ```bash
-# Example: Add Rust support
+# Enable Rust support
 npm install tree-sitter-rust
+
+# Enable Java support
+npm install tree-sitter-java
+
+# Enable Ruby support
+npm install tree-sitter-ruby
 ```
 
-Matryoshka includes built-in symbol mappings for 20+ popular languages. Once the package is installed, the language is automatically available.
+**Languages with built-in mappings:**
+- TypeScript, JavaScript, Python, Go, Rust, C, C++, Java
+- Ruby, PHP, C#, Kotlin, Swift, Scala, Lua, Haskell, Elixir
+- HTML, CSS, JSON, YAML, TOML, Markdown, SQL, Bash
 
-For custom languages or to override built-in mappings, add configuration to `~/.matryoshka/config.json`:
+Once a package is installed, the language is automatically available for symbol extraction.
+
+#### Custom Language Configuration
+
+For languages without built-in mappings, or to override existing mappings, create a config file at `~/.matryoshka/config.json`:
 
 ```json
 {
   "grammars": {
     "mylang": {
       "package": "tree-sitter-mylang",
-      "extensions": [".ml"],
+      "extensions": [".ml", ".mli"],
+      "moduleExport": "mylang",
       "symbols": {
         "function_definition": "function",
-        "class_definition": "class"
+        "method_definition": "method",
+        "class_definition": "class",
+        "module_definition": "module"
       }
     }
   }
 }
 ```
+
+**Configuration fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `package` | Yes | npm package name for the tree-sitter grammar |
+| `extensions` | Yes | File extensions to associate with this language |
+| `symbols` | Yes | Maps tree-sitter node types to symbol kinds |
+| `moduleExport` | No | Submodule export name (e.g., `"typescript"` for tree-sitter-typescript) |
+
+**Symbol kinds:** `function`, `method`, `class`, `interface`, `type`, `struct`, `enum`, `trait`, `module`, `variable`, `constant`, `property`
+
+#### Finding Tree-sitter Node Types
+
+To configure symbol mappings for a new language, you need to know the tree-sitter node types. You can explore them using the tree-sitter CLI:
+
+```bash
+# Install tree-sitter CLI
+npm install -g tree-sitter-cli
+
+# Parse a sample file and see the AST
+tree-sitter parse sample.mylang
+```
+
+Or use the [tree-sitter playground](https://tree-sitter.github.io/tree-sitter/playground) to explore node types interactively.
+
+**Example: Adding OCaml support**
+
+1. Find the grammar package: `tree-sitter-ocaml`
+2. Install it: `npm install tree-sitter-ocaml`
+3. Explore the AST to find node types for functions, modules, etc.
+4. Add to `~/.matryoshka/config.json`:
+
+```json
+{
+  "grammars": {
+    "ocaml": {
+      "package": "tree-sitter-ocaml",
+      "extensions": [".ml", ".mli"],
+      "moduleExport": "ocaml",
+      "symbols": {
+        "value_definition": "function",
+        "let_binding": "variable",
+        "type_definition": "type",
+        "module_definition": "module",
+        "module_type_definition": "interface"
+      }
+    }
+  }
+}
+```
+
+**Note:** Some tree-sitter packages use native Node.js bindings that may not compile on all systems. If installation fails, check if the package supports your Node.js version or look for WASM alternatives.
 
 ### Collection Operations
 
