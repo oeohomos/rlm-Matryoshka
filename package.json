@@ -48,6 +48,7 @@
   ],
   "scripts": {
     "start": "tsx src/index.ts",
+    "start:bun": "bun run src/index.ts",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "prepublishOnly": "npm run build",

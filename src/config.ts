@@ -63,12 +63,32 @@ const DEFAULT_CONFIG: Config = {
   },
 };
 
+function resolveEnvVars(obj: unknown): unknown {
+  if (typeof obj === "string") {
+    return obj.replace(/\$\{([^}]+)\}/g, (_, varName) => {
+      return process.env[varName] || "";
+    });
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(resolveEnvVars);
+  }
+  if (obj && typeof obj === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = resolveEnvVars(value);
+    }
+    return result;
+  }
+  return obj;
+}
+
 export async function loadConfig(configPath?: string): Promise<Config> {
   const path = configPath || resolve(process.cwd(), "config.json");
 
   try {
     const content = await readFile(path, "utf-8");
-    const userConfig = JSON.parse(content) as Partial<Config>;
+    const rawConfig = JSON.parse(content) as Partial<Config>;
+    const userConfig = resolveEnvVars(rawConfig) as Partial<Config>;
 
     // Deep merge with defaults
     return {
