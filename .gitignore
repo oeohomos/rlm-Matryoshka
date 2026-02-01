@@ -28,4 +28,22 @@ Thumbs.db
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Lock files (use package-lock.json)
+bun.lock
+
+# Local config (contains API keys)
+config.json
+
+# Beads local state
+.beads/.local_version
+.beads/beads.db
+.beads/daemon.lock
+.beads/daemon-error
+.beads/last-touched
+
+# Claude Code
+.claude/
+
+# Misc
 blog.md
